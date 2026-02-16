@@ -1,0 +1,193 @@
+# CLAUDE.md — [PROJECT_NAME] Development Guide
+
+## Project Overview
+[Brief description of the project]
+
+## Architecture: Bulletproof React
+This project follows the Bulletproof React architecture. ALL development must adhere to these rules.
+
+### Folder Structure
+```
+src/
+├── app/          # Routes, providers, app entry (imports from features + shared)
+├── components/   # Shared UI components (shadcn/ui)
+├── config/       # Environment and app configuration
+├── features/     # Feature modules
+├── hooks/        # Shared custom hooks
+├── lib/          # Pre-configured libraries
+├── stores/       # Global Zustand stores
+├── styles/       # CSS theme and globals
+├── types/        # Shared TypeScript types
+└── utils/        # Shared utility functions
+```
+
+### Feature Module Structure
+```
+src/features/[feature-name]/
+├── api/          # TanStack Query hooks + API calls
+├── components/   # Feature-scoped components
+├── hooks/        # Feature-scoped hooks
+├── stores/       # Feature-scoped Zustand stores
+├── types/        # Feature-scoped types
+├── utils/        # Feature-scoped utilities
+└── index.ts      # Public API exports
+```
+
+### Import Rules (CRITICAL)
+```
+✅ ALLOWED:
+  features → shared (components, hooks, lib, types, utils)
+  app → features + shared
+
+❌ FORBIDDEN:
+  features → other features (NO cross-feature imports!)
+  features → app
+  shared → features
+  shared → app
+```
+
+### Path Aliases
+Always use path aliases for imports:
+- `@/components/*` — Shared components
+- `@/features/*` — Feature modules
+- `@/hooks/*` — Shared hooks
+- `@/lib/*` — Libraries
+- `@/types/*` — Shared types
+- `@/utils/*` — Shared utilities
+
+---
+
+## Styling
+
+### Theme Files
+- `styles/globals.css` — Tailwind directives + theme import
+- `styles/theme.css` — CSS variables for all colors
+
+### Styling Rules
+1. Use CSS variables from theme for ALL colors
+2. Never hardcode colors (no `bg-gray-800`, `text-blue-500`)
+3. Use `bg-[var(--color-name)]` syntax
+4. Use shadcn/ui components as base
+5. Tailwind utilities for layout and spacing only
+
+---
+
+## TypeScript Rules (ZERO TOLERANCE)
+
+- **Zero `any` types** — use `unknown` + type guards or Zod
+- **Zero `@ts-ignore` / `@ts-expect-error`** — fix the actual error
+- **Zero non-null assertions (`!`)** — use `?.` and `??`
+- **All function parameters and returns must have explicit types**
+- **All unused imports/variables must be removed**
+
+---
+
+## Error Handling
+
+1. Never swallow errors — always log and handle
+2. Provide fallback arrays for nullable queries: `data || []`
+3. Show user-facing error messages
+4. Implement loading, empty, and error states for every async operation
+5. Validate API response structure before using in UI
+6. Log at every data boundary
+
+---
+
+## Data Fetching
+
+### TanStack Query Hooks
+```typescript
+// src/features/[feature]/api/use-[resource].ts
+import { useQuery } from '@tanstack/react-query';
+import { get[Resource]s } from './[resource]-api';
+
+export function use[Resource]s() {
+  return useQuery({
+    queryKey: ['[resource]s'],
+    queryFn: get[Resource]s,
+  });
+}
+```
+
+### API Functions
+```typescript
+// src/features/[feature]/api/[resource]-api.ts
+import { supabase } from '@/lib/supabase';
+import type { [Resource] } from '../types';
+
+export async function get[Resource]s(): Promise<[Resource][]> {
+  const { data, error } = await supabase
+    .from('[table]')
+    .select('*');
+
+  if (error) throw error;
+  return data || [];
+}
+```
+
+---
+
+## State Management
+
+### Zustand Store Pattern
+```typescript
+// src/features/[feature]/stores/[feature]-store.ts
+import { create } from 'zustand';
+
+type [Feature]State = {
+  // state
+  selectedId: string | null;
+  // actions
+  setSelectedId: (id: string | null) => void;
+};
+
+export const use[Feature]Store = create<[Feature]State>((set) => ({
+  selectedId: null,
+  setSelectedId: (id) => set({ selectedId: id }),
+}));
+```
+
+---
+
+## Pre-commit Checklist
+
+Before committing any code:
+
+```bash
+npm run type-check  # TypeScript — must pass
+npm run lint        # ESLint — must pass
+npm run build       # Production build — must pass
+```
+
+- [ ] Zero `any` types
+- [ ] Zero `@ts-ignore`
+- [ ] Zero unused imports/variables
+- [ ] All colors use CSS variables
+- [ ] No cross-feature imports
+- [ ] Error handling for all async operations
+- [ ] Loading/empty/error states in UI
+
+---
+
+## Environment Variables
+
+```bash
+# .env.example
+VITE_SUPABASE_URL=your-supabase-url
+VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_APP_NAME=[PROJECT_NAME]
+```
+
+All env vars are validated with Zod at startup in `src/config/env.ts`.
+
+---
+
+## Adding a New Feature
+
+1. Create folder: `src/features/[feature-name]/`
+2. Add subfolders: `api/`, `components/`, `hooks/`, `stores/`, `types/`, `utils/`
+3. Create `index.ts` with public exports
+4. Add TanStack Query hooks in `api/`
+5. Build components in `components/`
+6. Add route in `app/routes/`
+7. Export only what's needed from `index.ts`

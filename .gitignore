@@ -1,0 +1,21 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment (NEVER commit these)
+.env
+.env.local
+.env.production
+
+# Node
+node_modules/
+
+# Notes (personal scratch files)
+*.scratch.md
+*.personal.md
