@@ -6,8 +6,13 @@ Centralized development standards, architecture guides, error patterns, and Clau
 
 This repo serves as the single source of truth for:
 
-- **Architecture patterns** — Bulletproof React structure, stack defaults, and coding standards
+- **Architecture patterns** — Bulletproof React structure, stack defaults, API design, and coding standards
 - **Error prevention** — Documented errors and lessons learned across all projects
+- **CI/CD** — GitHub Actions pipeline and deployment automation
+- **Git workflow** — Branch strategy, commit conventions, PR process
+- **Security** — Environment variables, RLS, input validation, dependency audit
+- **Testing** — Test strategy, patterns, minimum requirements
+- **Deployment** — Pre-deploy checklist and rollback procedures
 - **Templates** — Reusable CLAUDE.md, .env, and project scaffolding templates
 - **Agent configs** — Claude Code agent definitions for automated workflows
 
@@ -18,8 +23,16 @@ When starting any new project:
 1. Read `errors/common-errors-and-lessons.md` — mandatory before writing any code
 2. Follow `architecture/stack-defaults.md` for tech stack decisions
 3. Use `architecture/bulletproof-react-prompt.md` as your Claude Code prompt
-4. Copy `templates/CLAUDE.md.template` into your project root
+4. Copy `templates/CLAUDE.md.template` into your project root and fill in project details
 5. Copy `templates/.env.example.template` and fill in values
+6. Copy `ci-cd/ci.yml` to `.github/workflows/ci.yml`
+7. Set up branch protection following `ci-cd/ci-cd-guide.md`
+8. Share `git/git-workflow.md` with the team
+
+When deploying:
+
+1. Run through `deployment/deploy-checklist.md`
+2. Run through `security/security-standards.md` security review checklist
 
 ## Repo Structure
 
@@ -28,8 +41,20 @@ dev-standards/
 ├── README.md                              # This file
 ├── architecture/
 │   ├── stack-defaults.md                  # Default tech stack for all apps
+│   ├── api-patterns.md                    # API response format, pagination, error codes
 │   ├── bulletproof-react-prompt.md        # Claude Code prompt for new projects
 │   └── bulletproof-react-refactor.md      # Claude Code prompt for refactoring existing projects
+├── ci-cd/
+│   ├── ci.yml                             # GitHub Actions workflow (copy to .github/workflows/)
+│   └── ci-cd-guide.md                     # CI/CD setup, configuration, and troubleshooting
+├── git/
+│   └── git-workflow.md                    # Branch strategy, commits, PRs, releases
+├── security/
+│   └── security-standards.md              # Env vars, RLS, input validation, auth, dependencies
+├── testing/
+│   └── testing-strategy.md                # Test pyramid, patterns, Vitest config, minimum reqs
+├── deployment/
+│   └── deploy-checklist.md                # Pre-deploy verification and rollback procedures
 ├── errors/
 │   └── common-errors-and-lessons.md       # Error patterns and prevention (MANDATORY READ)
 ├── templates/
@@ -56,13 +81,39 @@ claude "Read dev-standards/architecture/bulletproof-react-prompt.md and create t
 claude "Read dev-standards/errors/common-errors-and-lessons.md before implementing this feature: ..."
 ```
 
+Or add to your project's CLAUDE.md:
+
+```markdown
+## External Standards
+Before any development, read these files from the dev-standards repo:
+- `../dev-standards/errors/common-errors-and-lessons.md`
+- `../dev-standards/architecture/stack-defaults.md`
+- `../dev-standards/security/security-standards.md`
+```
+
 ### For Claude.ai (Chat)
 
-Upload the relevant files when starting a conversation about a new project or feature.
+Upload the relevant files when starting a conversation about a new project or feature. Key files are already reflected in Claude's memory.
 
 ### For Your Team
 
-Share this repo with Ricardo, Marco, Ruth, and the rest of the team so everyone follows the same standards.
+Share this repo with Ricardo, Marco, Ruth, and the rest of the team:
+- Everyone reads `errors/common-errors-and-lessons.md` before starting
+- Everyone follows `git/git-workflow.md` for branches and commits
+- CI pipeline enforces standards automatically via `ci-cd/ci.yml`
+- `deployment/deploy-checklist.md` is the go/no-go for production
+
+## New Project Setup Sequence
+
+```
+1. Clone dev-standards repo alongside your project
+2. Copy CLAUDE.md.template → project/CLAUDE.md
+3. Copy .env.example.template → project/.env.example
+4. Copy ci.yml → project/.github/workflows/ci.yml
+5. Set up branch protection on main (see ci-cd-guide.md)
+6. Initialize project with bulletproof-react-prompt.md
+7. Run security checklist before first deploy
+```
 
 ## Rules
 
@@ -70,6 +121,8 @@ Share this repo with Ricardo, Marco, Ruth, and the rest of the team so everyone 
 2. **Never commit credentials** — no API keys, tokens, or passwords
 3. **Keep it project-agnostic** — specific project details go in project repos, not here
 4. **Error docs are mandatory** — every developer must read them before starting work
+5. **CI must pass** — no merging to main without green CI
+6. **Security review before deploy** — run the checklist, no shortcuts
 
 ## Last Updated
 

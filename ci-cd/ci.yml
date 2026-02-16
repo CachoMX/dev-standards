@@ -1,0 +1,129 @@
+# GitHub Actions CI Pipeline
+# Copy this file to your project: .github/workflows/ci.yml
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check for forbidden patterns
+        run: |
+          echo "🔍 Checking for 'any' types..."
+          if grep -rn ": any\b" src/ --include="*.ts" --include="*.tsx" | grep -v "node_modules" | grep -v ".d.ts"; then
+            echo "❌ Found 'any' types. Fix them before merging."
+            exit 1
+          fi
+
+          echo "🔍 Checking for @ts-ignore..."
+          if grep -rn "@ts-ignore\|@ts-expect-error" src/ --include="*.ts" --include="*.tsx"; then
+            echo "❌ Found @ts-ignore/@ts-expect-error. Fix the actual type error."
+            exit 1
+          fi
+
+          echo "🔍 Checking for console.log in production code..."
+          if grep -rn "console\.log" src/ --include="*.ts" --include="*.tsx" | grep -v "// debug" | grep -v "utils/logger"; then
+            echo "⚠️  Found console.log statements. Use a logger utility instead."
+          fi
+
+          echo "🔍 Checking for hardcoded colors..."
+          if grep -rn "bg-gray-\|bg-blue-\|bg-red-\|bg-green-\|text-gray-\|text-blue-\|text-red-\|text-green-" src/ --include="*.tsx" | grep -v "// theme-ok"; then
+            echo "⚠️  Found hardcoded Tailwind colors. Use CSS variables instead."
+          fi
+
+          echo "✅ All pattern checks passed"
+
+      - name: Build
+        run: npm run build
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: quality
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test -- --run --reporter=verbose
+        continue-on-error: false
+
+      # Uncomment when you have E2E tests configured
+      # - name: Install Playwright
+      #   run: npx playwright install --with-deps
+      # - name: Run E2E tests
+      #   run: npm run test:e2e
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Check for secrets in code
+        run: |
+          echo "🔍 Checking for potential secrets..."
+          PATTERNS="password\s*=\s*['\"]|api_key\s*=\s*['\"]|secret\s*=\s*['\"]|token\s*=\s*['\"]|SUPABASE_SERVICE_ROLE_KEY\s*=\s*['\"]"
+          if grep -rniE "$PATTERNS" src/ --include="*.ts" --include="*.tsx" --include="*.js" | grep -v ".env" | grep -v "process.env" | grep -v "import.meta.env"; then
+            echo "❌ Potential hardcoded secrets found!"
+            exit 1
+          fi
+          echo "✅ No hardcoded secrets found"
