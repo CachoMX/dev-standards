@@ -193,6 +193,342 @@ cp .env.example .env.local
 
 Required variables: [LIST YOUR VARIABLES]
 
+## Common Feature Patterns
+
+### Authentication Flow
+
+```typescript
+// src/features/auth/api/auth.ts
+import { supabase } from '@/lib/supabase';
+
+export async function signIn(email: string, password: string) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function signOut() {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+}
+
+// src/features/auth/hooks/use-auth.ts
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+
+export function useAuth() {
+  return useQuery({
+    queryKey: ['auth', 'user'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      return user;
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+// src/components/layouts/protected-route.tsx
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '@/features/auth';
+
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { data: user, isLoading } = useAuth();
+
+  if (isLoading) return <LoadingSpinner />;
+  if (!user) return <Navigate to="/login" replace />;
+
+  return <>{children}</>;
+}
+```
+
+### CRUD Operations (Leads Example)
+
+```typescript
+// src/features/leads/types/index.ts
+export interface Lead {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  source: 'web' | 'referral' | 'ad' | 'cold';
+  status: 'new' | 'contacted' | 'qualified' | 'converted';
+  created_at: string;
+  organization_id: string;
+}
+
+export interface LeadFilters {
+  status?: string;
+  source?: string;
+  search?: string;
+}
+
+// src/features/leads/api/get-leads.ts
+import { supabase } from '@/lib/supabase';
+import type { Lead, LeadFilters } from '../types';
+
+export async function getLeads(filters: LeadFilters = {}) {
+  let query = supabase
+    .from('leads')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false });
+
+  if (filters.status) {
+    query = query.eq('status', filters.status);
+  }
+
+  if (filters.search) {
+    query = query.or(`name.ilike.%${filters.search}%,email.ilike.%${filters.search}%`);
+  }
+
+  const { data, error, count } = await query;
+
+  if (error) throw error;
+
+  return {
+    data: data || [],
+    meta: { total: count || 0 },
+  };
+}
+
+// src/features/leads/api/use-leads.ts
+import { useQuery } from '@tanstack/react-query';
+import { getLeads } from './get-leads';
+import type { LeadFilters } from '../types';
+
+export function useLeads(filters: LeadFilters) {
+  return useQuery({
+    queryKey: ['leads', filters],
+    queryFn: () => getLeads(filters),
+  });
+}
+
+// src/features/leads/api/use-create-lead.ts
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
+import type { Lead } from '../types';
+
+export function useCreateLead() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: Omit<Lead, 'id' | 'created_at' | 'organization_id'>) => {
+      const { data, error } = await supabase
+        .from('leads')
+        .insert(input)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
+}
+
+// src/features/leads/components/lead-list.tsx
+import { useLeads } from '../api/use-leads';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { ErrorMessage } from '@/components/ui/error-message';
+import { EmptyState } from '@/components/ui/empty-state';
+
+export function LeadList({ filters }: { filters: LeadFilters }) {
+  const { data, isLoading, error } = useLeads(filters);
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message="Failed to load leads" />;
+  if (data.data.length === 0) return <EmptyState message="No leads found" />;
+
+  return (
+    <div>
+      {data.data.map(lead => (
+        <LeadCard key={lead.id} lead={lead} />
+      ))}
+    </div>
+  );
+}
+```
+
+### Form with Validation
+
+```typescript
+// src/features/leads/schemas/create-lead.ts
+import { z } from 'zod';
+
+export const createLeadSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(200),
+  email: z.string().email('Invalid email address'),
+  phone: z.string().regex(/^\+?[\d\s-()]+$/, 'Invalid phone number').optional(),
+  source: z.enum(['web', 'referral', 'ad', 'cold']),
+});
+
+export type CreateLeadInput = z.infer<typeof createLeadSchema>;
+
+// src/features/leads/components/create-lead-form.tsx
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { createLeadSchema, type CreateLeadInput } from '../schemas/create-lead';
+import { useCreateLead } from '../api/use-create-lead';
+
+export function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
+  const { mutate, isPending } = useCreateLead();
+
+  const form = useForm<CreateLeadInput>({
+    resolver: zodResolver(createLeadSchema),
+    defaultValues: {
+      name: '',
+      email: '',
+      phone: '',
+      source: 'web',
+    },
+  });
+
+  const onSubmit = (data: CreateLeadInput) => {
+    mutate(data, {
+      onSuccess: () => {
+        toast.success('Lead created successfully');
+        onSuccess();
+      },
+      onError: (error) => {
+        toast.error('Failed to create lead');
+        console.error(error);
+      },
+    });
+  };
+
+  return (
+    <form onSubmit={form.handleSubmit(onSubmit)}>
+      <Input label="Name" {...form.register('name')} error={form.formState.errors.name?.message} />
+      <Input label="Email" {...form.register('email')} error={form.formState.errors.email?.message} />
+      <Input label="Phone" {...form.register('phone')} error={form.formState.errors.phone?.message} />
+      <Select label="Source" {...form.register('source')} options={...} />
+      <Button type="submit" disabled={isPending}>
+        {isPending ? 'Creating...' : 'Create Lead'}
+      </Button>
+    </form>
+  );
+}
+```
+
+### Filtering & Search with URL State
+
+```typescript
+// src/features/leads/hooks/use-lead-filters.ts
+import { useSearchParams } from 'react-router-dom';
+import type { LeadFilters } from '../types';
+
+export function useLeadFilters() {
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const filters: LeadFilters = {
+    status: searchParams.get('status') || undefined,
+    source: searchParams.get('source') || undefined,
+    search: searchParams.get('search') || undefined,
+  };
+
+  const setFilters = (newFilters: Partial<LeadFilters>) => {
+    const params = new URLSearchParams();
+    Object.entries({ ...filters, ...newFilters }).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    setSearchParams(params);
+  };
+
+  return { filters, setFilters };
+}
+
+// Usage in component
+import { useLeadFilters } from '../hooks/use-lead-filters';
+import { useLeads } from '../api/use-leads';
+
+export function LeadsPage() {
+  const { filters, setFilters } = useLeadFilters();
+  const { data } = useLeads(filters);
+
+  return (
+    <div>
+      <Input
+        placeholder="Search leads..."
+        value={filters.search || ''}
+        onChange={(e) => setFilters({ search: e.target.value })}
+      />
+      <Select
+        value={filters.status || ''}
+        onChange={(e) => setFilters({ status: e.target.value })}
+      >
+        <option value="">All statuses</option>
+        <option value="new">New</option>
+        <option value="contacted">Contacted</option>
+      </Select>
+      <LeadList filters={filters} />
+    </div>
+  );
+}
+```
+
+### External API Integration (Pagination Example)
+
+```typescript
+// src/features/sync/api/sync-hubspot-deals.ts
+import { hubspotClient } from '@/lib/hubspot';
+import { supabase } from '@/lib/supabase';
+
+export async function syncHubSpotDeals() {
+  let after: string | undefined = undefined;
+  let allDeals = [];
+  let page = 1;
+
+  // Fetch all pages
+  do {
+    console.log(`📄 Fetching page ${page}...`);
+
+    const response = await hubspotClient.crm.deals.basicApi.getPage(100, after);
+    allDeals.push(...response.results);
+    after = response.paging?.next?.after;
+    page++;
+  } while (after);
+
+  console.log(`✅ Fetched ${allDeals.length} total deals`);
+
+  // Build contact lookup map for foreign keys
+  const { data: contacts } = await supabase.from('contacts').select('id, hubspot_id');
+  const contactMap = new Map(contacts?.map(c => [c.hubspot_id, c.id]) || []);
+
+  // Upsert to database
+  for (const hsDeal of allDeals) {
+    const contactId = contactMap.get(hsDeal.associations?.contacts?.results[0]?.id);
+
+    await supabase.from('deals').upsert({
+      hubspot_id: hsDeal.id,
+      deal_name: hsDeal.properties.dealname,
+      amount: parseFloat(hsDeal.properties.amount || '0'),
+      contact_id: contactId || null,
+      synced_at: new Date().toISOString(),
+    });
+  }
+
+  return { synced: allDeals.length };
+}
+```
+
+---
+
 ## [PROJECT-SPECIFIC SECTION]
 
 [Add any project-specific context: database schema notes, third-party API details, business logic rules, etc.]
+
+### Database Schema
+
+[Document key tables, relationships, and any gotchas]
+
+### External APIs
+
+[Document third-party services: HubSpot, Stripe, etc.]
+
+### Business Logic Rules
+
+[Document any domain-specific logic or calculations]

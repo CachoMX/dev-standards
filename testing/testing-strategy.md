@@ -324,4 +324,332 @@ npm run test -- --run --coverage
 
 # Run E2E tests
 npm run test:e2e
+
+# Run E2E tests in headed mode (see browser)
+npm run test:e2e -- --headed
+
+# Run specific E2E test
+npm run test:e2e -- login.spec.ts
+```
+
+---
+
+## E2E Testing with Playwright
+
+### Setup
+
+```typescript
+// playwright.config.ts
+import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './e2e',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: 'html',
+  use: {
+    baseURL: 'http://localhost:5173',
+    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+  },
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+  ],
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:5173',
+    reuseExistingServer: !process.env.CI,
+  },
+});
+```
+
+### E2E Test Examples
+
+#### Critical User Flow: Login
+
+```typescript
+// e2e/auth/login.spec.ts
+import { test, expect } from '@playwright/test';
+
+test.describe('Login Flow', () => {
+  test('should login successfully with valid credentials', async ({ page }) => {
+    await page.goto('/login');
+
+    // Fill login form
+    await page.getByLabel('Email').fill('user@example.com');
+    await page.getByLabel('Password').fill('password123');
+    await page.getByRole('button', { name: 'Sign In' }).click();
+
+    // Wait for redirect to dashboard
+    await expect(page).toHaveURL('/dashboard');
+
+    // Verify user is logged in
+    await expect(page.getByText('Welcome back')).toBeVisible();
+  });
+
+  test('should show error with invalid credentials', async ({ page }) => {
+    await page.goto('/login');
+
+    await page.getByLabel('Email').fill('wrong@example.com');
+    await page.getByLabel('Password').fill('wrongpassword');
+    await page.getByRole('button', { name: 'Sign In' }).click();
+
+    // Should stay on login page
+    await expect(page).toHaveURL('/login');
+
+    // Show error message
+    await expect(page.getByText(/invalid credentials/i)).toBeVisible();
+  });
+
+  test('should require email and password', async ({ page }) => {
+    await page.goto('/login');
+
+    await page.getByRole('button', { name: 'Sign In' }).click();
+
+    // Show validation errors
+    await expect(page.getByText(/email is required/i)).toBeVisible();
+    await expect(page.getByText(/password is required/i)).toBeVisible();
+  });
+
+  test('should redirect to login when accessing protected route', async ({ page }) => {
+    await page.goto('/dashboard');
+
+    // Redirected to login
+    await expect(page).toHaveURL(/\/login/);
+  });
+});
+```
+
+#### CRUD Operation: Create Lead
+
+```typescript
+// e2e/leads/create-lead.spec.ts
+import { test, expect } from '@playwright/test';
+
+test.describe('Create Lead', () => {
+  test.beforeEach(async ({ page }) => {
+    // Login before each test
+    await page.goto('/login');
+    await page.getByLabel('Email').fill('user@example.com');
+    await page.getByLabel('Password').fill('password123');
+    await page.getByRole('button', { name: 'Sign In' }).click();
+    await expect(page).toHaveURL('/dashboard');
+  });
+
+  test('should create new lead successfully', async ({ page }) => {
+    await page.goto('/leads');
+
+    // Click "New Lead" button
+    await page.getByRole('button', { name: 'New Lead' }).click();
+
+    // Fill form
+    await page.getByLabel('Name').fill('John Doe');
+    await page.getByLabel('Email').fill('john@example.com');
+    await page.getByLabel('Phone').fill('+1234567890');
+    await page.getByLabel('Source').selectOption('web');
+
+    // Submit
+    await page.getByRole('button', { name: 'Create Lead' }).click();
+
+    // Wait for success message
+    await expect(page.getByText(/lead created successfully/i)).toBeVisible();
+
+    // Verify lead appears in table
+    await expect(page.getByRole('cell', { name: 'John Doe' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'john@example.com' })).toBeVisible();
+  });
+
+  test('should show validation errors for invalid data', async ({ page }) => {
+    await page.goto('/leads');
+    await page.getByRole('button', { name: 'New Lead' }).click();
+
+    // Try to submit with invalid email
+    await page.getByLabel('Name').fill('John Doe');
+    await page.getByLabel('Email').fill('not-an-email');
+    await page.getByRole('button', { name: 'Create Lead' }).click();
+
+    // Should show validation error
+    await expect(page.getByText(/invalid email/i)).toBeVisible();
+  });
+});
+```
+
+#### Data Flow: Filter and Search
+
+```typescript
+// e2e/leads/filter-leads.spec.ts
+import { test, expect } from '@playwright/test';
+
+test.describe('Filter Leads', () => {
+  test.beforeEach(async ({ page }) => {
+    // Login
+    await page.goto('/login');
+    await page.getByLabel('Email').fill('user@example.com');
+    await page.getByLabel('Password').fill('password123');
+    await page.getByRole('button', { name: 'Sign In' }).click();
+    await page.goto('/leads');
+  });
+
+  test('should filter leads by status', async ({ page }) => {
+    // Initial state - shows all leads
+    const allRowsBefore = await page.getByRole('row').count();
+    expect(allRowsBefore).toBeGreaterThan(1);
+
+    // Apply filter
+    await page.getByLabel('Status').selectOption('active');
+    await page.getByRole('button', { name: 'Apply Filters' }).click();
+
+    // Wait for table to update
+    await page.waitForTimeout(500);
+
+    // Verify only active leads shown
+    const rows = page.getByRole('row');
+    const activeStatusCells = rows.filter({ has: page.getByText('Active') });
+    expect(await activeStatusCells.count()).toBeGreaterThan(0);
+  });
+
+  test('should search leads by name', async ({ page }) => {
+    await page.getByPlaceholder('Search leads...').fill('John');
+    await page.getByPlaceholder('Search leads...').press('Enter');
+
+    // Wait for search results
+    await page.waitForTimeout(500);
+
+    // Verify results contain search term
+    const firstRow = page.getByRole('row').nth(1);
+    await expect(firstRow).toContainText('John');
+  });
+
+  test('should show empty state when no results', async ({ page }) => {
+    await page.getByPlaceholder('Search leads...').fill('nonexistent-lead-xyz');
+    await page.getByPlaceholder('Search leads...').press('Enter');
+
+    await expect(page.getByText(/no leads found/i)).toBeVisible();
+  });
+});
+```
+
+#### API Integration: External Service
+
+```typescript
+// e2e/sync/hubspot-sync.spec.ts
+import { test, expect } from '@playwright/test';
+
+test.describe('HubSpot Sync', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/login');
+    await page.getByLabel('Email').fill('admin@example.com');
+    await page.getByLabel('Password').fill('adminpass');
+    await page.getByRole('button', { name: 'Sign In' }).click();
+  });
+
+  test('should trigger manual sync', async ({ page }) => {
+    await page.goto('/settings/integrations');
+
+    // Click sync button
+    await page.getByRole('button', { name: 'Sync Now' }).click();
+
+    // Show loading state
+    await expect(page.getByText(/syncing.../i)).toBeVisible();
+
+    // Wait for completion (max 30 seconds)
+    await expect(page.getByText(/sync completed/i)).toBeVisible({ timeout: 30000 });
+
+    // Verify sync stats updated
+    const lastSyncElement = page.getByText(/last sync:/i);
+    await expect(lastSyncElement).toBeVisible();
+  });
+
+  test('should show error if sync fails', async ({ page }) => {
+    // Mock API failure (requires test API or MSW setup)
+    await page.goto('/settings/integrations');
+
+    // Trigger sync
+    await page.getByRole('button', { name: 'Sync Now' }).click();
+
+    // Should show error message (if API is down)
+    // This test needs proper mocking or test environment
+    // await expect(page.getByText(/sync failed/i)).toBeVisible();
+  });
+});
+```
+
+### E2E Test Helpers
+
+```typescript
+// e2e/helpers/auth.ts
+import { Page } from '@playwright/test';
+
+export async function login(page: Page, email: string, password: string) {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill(password);
+  await page.getByRole('button', { name: 'Sign In' }).click();
+  await page.waitForURL('/dashboard');
+}
+
+export async function logout(page: Page) {
+  await page.getByRole('button', { name: 'User menu' }).click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
+  await page.waitForURL('/login');
+}
+```
+
+```typescript
+// e2e/helpers/data.ts
+import { Page } from '@playwright/test';
+
+export async function createTestLead(page: Page, data: {
+  name: string;
+  email: string;
+  phone?: string;
+}) {
+  await page.goto('/leads');
+  await page.getByRole('button', { name: 'New Lead' }).click();
+  await page.getByLabel('Name').fill(data.name);
+  await page.getByLabel('Email').fill(data.email);
+  if (data.phone) await page.getByLabel('Phone').fill(data.phone);
+  await page.getByRole('button', { name: 'Create Lead' }).click();
+  await page.getByText(/lead created successfully/i).waitFor();
+}
+
+export async function cleanupTestData(page: Page, email: string) {
+  // Delete test lead by email
+  await page.goto('/leads');
+  const row = page.getByRole('row').filter({ hasText: email });
+  await row.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('button', { name: 'Confirm' }).click();
+}
+```
+
+### E2E Test Best Practices
+
+1. **Use data-testid sparingly** — prefer `getByRole`, `getByLabel`, `getByText`
+2. **Clean up test data** — don't leave test records in database
+3. **Use fixtures** for common setup (login, seed data)
+4. **Test critical paths only** — max 10-15 E2E tests per project
+5. **Run E2E in CI** but don't block on failures (they can be flaky)
+6. **Use screenshots/videos** for debugging failures
+7. **Mock external APIs** when possible to avoid rate limits
+
+---
+
+## Test Coverage Goals
+
+Don't aim for 100% coverage. Aim for confidence.
+
+- **Utils/helpers:** 90%+ coverage
+- **Business logic:** 80%+ coverage
+- **Components:** 60%+ coverage
+- **Pages/routes:** E2E tests cover critical flows
+
+```bash
+# Generate coverage report
+npm run test -- --run --coverage
+
+# View in browser
+open coverage/index.html
 ```

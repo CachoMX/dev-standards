@@ -86,10 +86,14 @@ grep -rn "TODO\|FIXME\|HACK\|XXX" src/ --include="*.ts" --include="*.tsx"
 ## 7. Performance
 
 - [ ] No unnecessary re-renders (check React DevTools if uncertain)
-- [ ] Images optimized (WebP, proper sizing)
+- [ ] Images optimized (WebP, proper sizing, lazy loading)
 - [ ] Bundle size reasonable (check with `npx vite-bundle-visualizer`)
 - [ ] API calls use pagination (not fetching entire tables)
 - [ ] TanStack Query has appropriate `staleTime` / `gcTime` settings
+- [ ] Lighthouse score > 90 on staging
+- [ ] First Contentful Paint < 1.5s
+- [ ] Time to Interactive < 3.5s
+- [ ] Critical API endpoints < 500ms response time
 
 ---
 
@@ -98,6 +102,11 @@ grep -rn "TODO\|FIXME\|HACK\|XXX" src/ --include="*.ts" --include="*.tsx"
 - [ ] Error tracking configured (Sentry, LogRocket, etc.)
 - [ ] Critical flows have logging
 - [ ] Health check endpoint exists (for APIs)
+- [ ] Alerts configured for:
+  - Server errors (5xx)
+  - High response times (>1s)
+  - Failed authentication attempts
+  - External API failures
 
 ---
 
@@ -145,6 +154,40 @@ If you ran a migration that broke things:
 
 ---
 
+## Common Deployment Failures
+
+| Issue | Symptom | Quick Fix |
+|---|---|---|
+| Missing env var | Build fails or app crashes | Add env var in hosting dashboard |
+| Type error | Build fails in CI | Run `npm run type-check` locally |
+| RLS too restrictive | Users can't access data | Test RLS with non-admin user |
+| Migration fails | App crashes on data access | Rollback migration, fix, redeploy |
+| API rate limit | External calls fail | Implement rate limiting/retry |
+| Bundle too large | Slow page loads | Run bundle visualizer, remove deps |
+
+---
+
+## Post-Deployment Communication
+
+After successful deploy:
+
+1. **Notify team in Slack/Discord:**
+   ```
+   ✅ Deployed v1.x.x to production
+   Changes: [brief summary]
+   Verification: [tested login, main feature, no errors]
+   ```
+
+2. **Update changelog** (if applicable)
+
+3. **Tag release in GitHub:**
+   ```bash
+   git tag -a v1.x.x -m "Release v1.x.x: [description]"
+   git push origin v1.x.x
+   ```
+
+---
+
 ## Deploy Frequency
 
 - **Hotfixes**: Deploy immediately after testing
@@ -152,3 +195,9 @@ If you ran a migration that broke things:
 - **Batch releases**: Weekly if multiple features are ready
 
 Never deploy on Fridays unless it's a critical hotfix.
+
+---
+
+## Last Updated
+
+February 2026
