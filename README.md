@@ -1,5 +1,7 @@
 # Dev Standards
 
+![CI](https://github.com/CachoMX/dev-standards/actions/workflows/ci.yml/badge.svg)
+
 Centralized development standards, architecture guides, error patterns, and Claude Code instructions for all projects by Carlos Aragon / AragonAutomates.
 
 ## Purpose
@@ -60,11 +62,14 @@ dev-standards/
 ├── templates/
 │   ├── CLAUDE.md.template                 # Template for project-level CLAUDE.md
 │   └── .env.example.template              # Template for environment variables
-└── agents/
-    ├── developer.md                       # Developer agent instructions
-    ├── code-reviewer.md                   # Code review agent instructions
-    ├── tester.md                          # QA/testing agent instructions
-    └── orchestrator.md                    # Multi-agent coordinator instructions
+├── scripts/
+│   └── setup-new-project.sh               # Automated new project setup
+├── agents/
+│   ├── developer.md                       # Developer agent instructions
+│   ├── code-reviewer.md                   # Code review agent instructions
+│   ├── tester.md                          # QA/testing agent instructions
+│   └── orchestrator.md                    # Multi-agent coordinator instructions
+└── CHANGELOG.md                           # Version history
 ```
 
 ## How to Use
@@ -105,6 +110,13 @@ Share this repo with Ricardo, Marco, Ruth, and the rest of the team:
 
 ## New Project Setup Sequence
 
+**Option A — Automated (recommended):**
+```bash
+# From the directory where your projects live
+./dev-standards/scripts/setup-new-project.sh my-new-app
+```
+
+**Option B — Manual:**
 ```
 1. Clone dev-standards repo alongside your project
 2. Copy CLAUDE.md.template → project/CLAUDE.md
@@ -113,6 +125,33 @@ Share this repo with Ricardo, Marco, Ruth, and the rest of the team:
 5. Set up branch protection on main (see ci-cd-guide.md)
 6. Initialize project with bulletproof-react-prompt.md
 7. Run security checklist before first deploy
+```
+
+## Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      app/ (thin)                         │
+│  routes/ + providers/ — imports features, no logic       │
+└──────────────┬──────────────────────────────────────────┘
+               │ imports
+┌──────────────▼──────────────────────────────────────────┐
+│                   features/ (THE CORE)                   │
+│  ┌────────────┐  ┌────────────┐  ┌────────────────────┐ │
+│  │   leads/   │  │   deals/   │  │   auth/            │ │
+│  │ api/       │  │ api/       │  │ api/               │ │
+│  │ components/│  │ components/│  │ hooks/             │ │
+│  │ hooks/     │  │ hooks/     │  │ components/        │ │
+│  │ types/     │  │ types/     │  │ index.ts           │ │
+│  │ index.ts   │  │ index.ts   │  └────────────────────┘ │
+│  └────────────┘  └────────────┘                         │
+│         ❌ NO cross-feature imports                       │
+└──────────────┬──────────────────────────────────────────┘
+               │ imports
+┌──────────────▼──────────────────────────────────────────┐
+│                    shared/ (reusable)                    │
+│  components/  hooks/  lib/  types/  utils/  stores/     │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ## Rules
