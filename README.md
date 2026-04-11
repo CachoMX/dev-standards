@@ -45,6 +45,8 @@ dev-standards/
 │   ├── stack-defaults.md                  # Default tech stack for all apps
 │   ├── api-patterns.md                    # API response format, pagination, error codes
 │   ├── nextjs.md                          # Next.js App Router standards (force-dynamic, parseBody, Sentry, etc.)
+│   ├── performance.md                     # Core Web Vitals, bundles, React/query performance
+│   ├── accessibility.md                   # WCAG 2.1 AA checklist and patterns
 │   ├── bulletproof-react-prompt.md        # Claude Code prompt for new projects
 │   └── bulletproof-react-refactor.md      # Claude Code prompt for refactoring existing projects
 ├── ci-cd/

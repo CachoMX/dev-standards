@@ -8,6 +8,19 @@ All notable changes to dev-standards are documented here.
 
 ---
 
+## [1.4.1] — 2026-04-10
+
+### Added
+- `architecture/accessibility.md` — WCAG 2.1 AA standards (was present locally, now tracked)
+
+### Removed
+- Stray `*.sync-conflict-*` copies (README, `ci-cd/ci.yml`, `deploy-checklist.md`) from an old sync tool
+
+### Changed
+- `README.md` — repo tree lists `performance.md` and `accessibility.md`
+
+---
+
 ## [1.4.0] — 2026-04-10
 
 ### Added
