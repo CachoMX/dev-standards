@@ -13,7 +13,7 @@ Every project handling client data must follow these security practices. This is
 1. **NEVER commit `.env` files** — verify `.gitignore` includes all `.env*` patterns
 2. **NEVER hardcode secrets** — no API keys, tokens, passwords, or connection strings in source code
 3. **NEVER log secrets** — no `console.log(apiKey)` or similar, even during debugging
-4. **NEVER put secrets in URLs** — no `?api_key=xxx` query parameters
+4. **NEVER put secrets in user-facing URLs** — no `?api_key=xxx` in links users click, share, or that appear in browser history. **Exception:** some vendors only support a **shared secret on the webhook callback URL** configured in *their* dashboard (server-to-server). That is acceptable if the secret is **required in production**, **rotated if leaked**, and **never logged** (log path without query). Prefer HMAC headers when the provider supports them (see `architecture/api-patterns.md`).
 5. **NEVER share secrets in Slack/email** — use a password manager or GitHub Secrets
 
 ### Validation
@@ -115,6 +115,140 @@ const { data } = await supabase
   .select('*');
 // RLS policy ensures user only sees their own data
 ```
+
+### Explicit Column Selects — No `SELECT *`
+
+**Never use `.select('*')` in production API routes.** Always name the columns you need.
+
+```typescript
+// ❌ WRONG — leaks future columns, breaks typed responses, costs bandwidth
+const { data } = await supabaseAdmin.from('tenants').select('*');
+
+// ✅ CORRECT — explicit columns; adding a secrets column later won't leak it
+const { data } = await supabaseAdmin
+  .from('tenants')
+  .select('id, email, stripe_subscription_id, subscription_status, plan_id');
+```
+
+Why this matters:
+- A `payments` table today has no secrets. Tomorrow someone adds a `raw_card_data` column — `SELECT *` immediately exposes it through every existing API endpoint.
+- The same applies to Supabase's auto-generated types: explicit selects keep your TypeScript inference accurate when the schema evolves.
+
+**Rule:** The only place `select('*')` is acceptable is in admin scripts/migrations and local debugging — never in shipped API routes.
+
+### Idempotency Guards
+
+Before any state-changing operation, verify the resource is in the expected state. This prevents double-charges, double-cancels, and duplicate creates.
+
+```typescript
+// ❌ WRONG — blindly applies state transition
+await stripe.subscriptions.update(id, { cancel_at_period_end: true });
+
+// ✅ CORRECT — guard every transition
+if (tenant.subscription_status === 'canceling') {
+  return NextResponse.json(
+    { error: 'Subscription is already scheduled for cancellation' },
+    { status: 400 },
+  );
+}
+if (tenant.subscription_status !== 'active') {
+  return NextResponse.json({ error: 'Subscription is not active' }, { status: 400 });
+}
+// Safe to proceed
+await stripe.subscriptions.update(id, { cancel_at_period_end: true });
+```
+
+Apply this pattern to: subscription state changes, payment retries, OAuth connections, any "activate / deactivate" toggle.
+
+### Service role: always scope by tenant / organization
+
+The Supabase **service role** bypasses RLS. Every `createAdminClient()` / `supabaseAdmin` query must still filter by `organization_id` (or equivalent tenant key) unless the operation is truly global platform admin.
+
+```typescript
+// ❌ WRONG — returns every org's rows if RLS is bypassed
+const { data } = await supabaseAdmin.from('commissions').select('id, amount');
+
+// ✅ CORRECT — explicit tenant boundary
+const { data } = await supabaseAdmin
+  .from('commissions')
+  .select('id, amount')
+  .eq('organization_id', organizationId);
+```
+
+**Audit:** periodically `grep -rE 'createAdminClient|supabaseAdmin' src/ app/` (adjust paths) and verify each call path includes tenant scoping.
+
+### App-layer permissions when RLS does not encode role matrix
+
+If fine-grained roles (e.g. sub-users, JSON permission blobs) live **only** in application code, RLS cannot enforce them. API routes must **re-check** permissions after auth — same checks for every entry point (REST route, Server Action, cron job).
+
+---
+
+## Webhooks, crons, and debug persistence
+
+### Verify inbound webhooks
+
+- Implement the provider's documented verification (HMAC header, signing secret, or required query secret).
+- Protect **every** URL that accepts the same provider's events (legacy + new paths).
+
+### Do not store raw PII from webhooks in debug tables
+
+If you persist webhook bodies for debugging or replay:
+
+- Redact emails, phones, names, addresses, tokens, and free-text notes **before** insert
+- Prefer storing `event_id`, `provider`, `status`, and a **sanitized** payload shape
+- Restrict read access to admin roles; add retention (delete after N days)
+
+### Cron / scheduled route authentication
+
+Protect `app/api/cron/*` (or similar) with a shared secret — e.g. compare `request.headers.get('authorization')` to `` `Bearer ${process.env.CRON_SECRET}` ``. Reject if missing or wrong. **Never** expose `CRON_SECRET` to the client.
+
+---
+
+## API Route Validation (Next.js)
+
+For Next.js App Router API routes, use a `parseBody` helper to validate every `POST`/`PATCH`/`PUT` request body with Zod before touching any data:
+
+```typescript
+// lib/validation/schemas.ts
+import { z, ZodSchema } from 'zod';
+import { NextResponse } from 'next/server';
+
+export async function parseBody<T>(
+  req: Request,
+  schema: ZodSchema<T>,
+): Promise<{ data: T } | NextResponse> {
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    return NextResponse.json(
+      { error: 'Validation failed', details: result.error.flatten() },
+      { status: 400 },
+    );
+  }
+  return { data: result.data };
+}
+```
+
+```typescript
+// Usage in any POST route:
+export async function POST(req: Request) {
+  const parsed = await parseBody(req, z.object({
+    name: z.string().min(1).max(200),
+    email: z.string().email(),
+  }));
+  if (parsed instanceof NextResponse) return parsed; // validation error returned
+  const { name, email } = parsed.data; // fully typed, safe to use
+}
+```
+
+This ensures: malformed JSON returns 400 immediately, every field is validated before any DB write, and error details are machine-readable for client-side field highlighting.
+
+**Webhook routes:** do not use this helper for the initial read — use `await req.text()`, verify the signature, then `JSON.parse` (see `architecture/api-patterns.md`).
 
 ---
 
@@ -269,13 +403,16 @@ Run this checklist before any production deploy:
 - [ ] No secrets in logs or error messages
 
 ### Database
-- [ ] RLS enabled on ALL tables
+- [ ] RLS enabled on ALL tables (including new tables added this release)
 - [ ] RLS policies tested with different user roles
 - [ ] Service role key NOT used in client code
 - [ ] No raw SQL with string concatenation (use parameterized queries)
+- [ ] **No `SELECT *`** — all Supabase queries use explicit column lists
+- [ ] Idempotency guards on all state-changing operations (subscriptions, payments, activations)
 
 ### Input
 - [ ] All user inputs validated with Zod schemas
+- [ ] Next.js JSON API routes use `parseBody` — **except signed webhooks**, which use `request.text()` + verify + `JSON.parse` (see `architecture/api-patterns.md`)
 - [ ] No `dangerouslySetInnerHTML` without DOMPurify
 - [ ] No open redirects
 - [ ] File uploads validated (type, size) if applicable
@@ -286,7 +423,9 @@ Run this checklist before any production deploy:
 - [ ] `getUser()` used for authorization (not `getSession()`)
 
 ### Dependencies
-- [ ] `npm audit` shows no high/critical vulnerabilities
+- [ ] `npm audit` shows no high/critical vulnerabilities (or team has documented why CI uses a stricter/softer threshold while upstream fixes land)
+- [ ] CI does not hide audit failures with `continue-on-error: true` **without** an explicit policy comment — green pipelines must not silently ignore security jobs
+- [ ] Spreadsheet generation on the server avoids known-vulnerable `xlsx` where audits flag issues — prefer **`exceljs`** or an actively patched alternative
 - [ ] No unnecessary dependencies
 - [ ] Lockfile committed (`package-lock.json`)
 

@@ -125,6 +125,97 @@ async function apiRequest<T>(
 
 ---
 
+## Next.js App Router API Routes
+
+When building with Next.js (not Vite + React), API routes live in `app/api/[route]/route.ts`. Every route must follow these conventions.
+
+### Mandatory Route Template
+
+```typescript
+// app/api/example/route.ts
+import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server'; // or your auth provider
+import { supabaseAdmin } from '@/lib/supabase/admin';
+import { z } from 'zod';
+import { parseBody } from '@/lib/validation/schemas';
+
+// Required on every route that reads auth/cookies
+export const dynamic = 'force-dynamic';
+
+const bodySchema = z.object({
+  name: z.string().min(1).max(200),
+  email: z.string().email(),
+});
+
+export async function POST(req: Request) {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // ✅ Validate body before touching DB
+  const parsed = await parseBody(req, bodySchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const { name, email } = parsed.data;
+
+  // ✅ Explicit column selects — no SELECT *
+  const { data: tenant } = await supabaseAdmin
+    .from('tenants')
+    .select('id, plan_id, subscription_status')
+    .eq('clerk_user_id', userId)
+    .single();
+
+  // ✅ Idempotency guard before mutating
+  if (tenant?.subscription_status === 'canceling') {
+    return NextResponse.json({ error: 'Already in progress' }, { status: 409 });
+  }
+
+  // ... business logic ...
+
+  return NextResponse.json({ success: true });
+}
+```
+
+### The Three Rules
+
+| Rule | Why |
+|------|-----|
+| `export const dynamic = 'force-dynamic'` | Routes using auth/headers crash at build time without it |
+| `parseBody(req, schema)` before any DB write | Malformed input returns 400 before touching the database |
+| Explicit `.select('id, col1, col2')` never `'*'` | `SELECT *` leaks columns added later; breaks typed responses |
+
+**Webhook routes are excluded from `parseBody` for the initial read** — use `await req.text()`, verify the signature, then `JSON.parse` and Zod (see "Read raw body once" below).
+
+### `parseBody` Helper
+
+```typescript
+// lib/validation/schemas.ts
+import { z, ZodSchema } from 'zod';
+import { NextResponse } from 'next/server';
+
+export async function parseBody<T>(
+  req: Request,
+  schema: ZodSchema<T>,
+): Promise<{ data: T } | NextResponse> {
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    return NextResponse.json(
+      { error: 'Validation failed', details: result.error.flatten() },
+      { status: 400 },
+    );
+  }
+  return { data: result.data };
+}
+```
+
+---
+
 ## Pagination
 
 ### Request Format
@@ -236,6 +327,54 @@ function buildLeadsQuery(filters: LeadFilters) {
 
 ## External API Integration (n8n, webhooks)
 
+### Read raw body once (HMAC / signature verification)
+
+**You cannot call `req.json()` before verifying a signature** — the HMAC must be computed over the exact bytes the provider sent. In Next.js App Router, read the body as text first, verify, then parse JSON.
+
+```typescript
+// ✅ CORRECT — single read, verify, then parse
+export async function POST(request: NextRequest) {
+  const rawBody = await request.text();
+
+  if (!verifyWebhookSignature(request, rawBody)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+
+  const result = webhookPayloadSchema.safeParse(payload);
+  // ...
+}
+```
+
+```typescript
+// ❌ WRONG — signature verification after json() consumes / alters stream semantics
+const body = await request.json();
+verifySignature(header, JSON.stringify(body)); // often fails — whitespace/order differs
+```
+
+Use `timingSafeEqual` (Node `crypto`) for comparing digests. If the provider documents a header name (e.g. `x-wh-signature`, `Stripe-Signature`), implement exactly that; if they only support a **shared secret in the URL** (`?secret=` / `?token=`), that is acceptable as a second line of defense when HMAC is unavailable — but **require the secret in production** (reject or 503 if unset).
+
+### Multiple webhook URLs for the same provider
+
+Legacy and new routes sometimes both receive events (e.g. `/api/webhooks/ghl` and `/api/integrations/ghl/webhook`). **Apply identical authentication and validation on every entry point** — attackers probe the path that is still unauthenticated.
+
+### Business timestamps from integrations (two different meanings)
+
+Scheduling integrations often expose two different times; mixing them breaks analytics and billing.
+
+| Concept | Typical meaning | Map from providers (examples) |
+|--------|------------------|-------------------------------|
+| **Booked / created** | When the user created the appointment or record | Calendly `created_at`, GHL `dateAdded`, HubSpot create date |
+| **Scheduled / start** | When the event is supposed to occur | Calendly `start_time`, GHL `startTime`, HubSpot meeting start |
+
+Document the mapping **per provider** in code comments or a single integration module; never store both in one field without naming which semantic it carries.
+
 ### Webhook Handler Pattern
 
 ```typescript
@@ -250,18 +389,25 @@ const webhookPayloadSchema = z.object({
   timestamp: z.string().datetime(),
 });
 
-// 2. Validate before processing
+// 2. Validate before processing (read raw body once — see section above)
 export async function handleWebhook(req: Request) {
-  // Verify webhook signature if applicable
+  const rawBody = await req.text();
   const signature = req.headers.get('x-webhook-signature');
-  if (!verifySignature(signature, await req.clone().text())) {
+  if (!verifySignature(signature, rawBody)) {
     return new Response(JSON.stringify({
       error: { code: 'UNAUTHORIZED', message: 'Invalid signature' }
     }), { status: 401 });
   }
 
-  // Parse and validate
-  const body = await req.json();
+  let body: unknown;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    return new Response(JSON.stringify({
+      error: { code: 'VALIDATION_ERROR', message: 'Invalid JSON' }
+    }), { status: 400 });
+  }
+
   const result = webhookPayloadSchema.safeParse(body);
 
   if (!result.success) {

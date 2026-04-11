@@ -8,6 +8,34 @@ All notable changes to dev-standards are documented here.
 
 ---
 
+## [1.4.0] — 2026-04-10
+
+### Added
+- `architecture/nextjs.md` — §5e webhook routes (raw body vs `parseBody`), middleware public paths for webhooks, cron bearer secret; checklist/deploy items for RLS same-release, webhook/cron env
+- `architecture/performance.md` — dashboard/chart-heavy pages: minimize `'use client'` boundaries, memoization, virtualization, Next cache note
+- `security/security-standards.md` — service-role tenant scoping + grep audit; app-layer permissions when RLS cannot encode role matrix; webhooks/crons/debug persistence (PII redaction); cron `CRON_SECRET`; nuanced rule for provider webhook URLs vs user-facing URL secrets; `npm audit` / `continue-on-error` + `exceljs` vs `xlsx` in checklist
+- `deployment/deploy-checklist.md` — CI audit visibility; RLS policies same release as tables; webhook + cron env; service-role grep; Supabase types regen; optional hex grep; failure table rows for charts/webhooks
+- `errors/common-errors-and-lessons.md` — chart/SVG hardcoded colors; `xlsx` vs `exceljs`; Vitest `vi.stubEnv`; documentation drift; checklist fixes for webhooks vs `parseBody`
+
+### Improved
+- `architecture/api-patterns.md` — webhook handler example uses single `req.text()` + verify + parse; "Three Rules" footnote excluding webhooks from `parseBody` on first read
+
+---
+
+## [1.3.0] — 2026-04-10
+
+### Added
+- `architecture/nextjs.md` — Next.js App Router standards: required files (`error.tsx`, `not-found.tsx`, `loading.tsx`), server vs client components, `force-dynamic`, `parseBody` Zod helper, explicit column selects, idempotency guards, `router.refresh()` pattern, Supabase two-client model, Sentry integration, SDK union type safety, full checklist
+
+### Improved
+- `security/security-standards.md` — added "Explicit Column Selects" (no `SELECT *`), "Idempotency Guards", and "API Route Validation (Next.js)" sections with `parseBody` helper; updated security review checklist
+- `architecture/api-patterns.md` — added "Next.js App Router API Routes" section with mandatory route template, `parseBody` helper, and the three rules (force-dynamic / parseBody / explicit selects)
+- `deployment/deploy-checklist.md` — security section: explicit selects + idempotency guards; data section: migration + rollback script requirement; monitoring section: Sentry DSN env vars + `error.tsx` / `not-found.tsx` checks
+- `errors/common-errors-and-lessons.md` — added 5 new error patterns from PingItNow GOD-AUDIT: Next.js prerender crash (force-dynamic), `window.location.reload()` vs `router.refresh()`, `SELECT *` data leakage, Stripe SDK union types, Vitest coverage threshold misconfiguration; updated pre-development checklist with Next.js section
+- `README.md` — added `nextjs.md` to repo structure; updated Quick Start to reference it for Next.js projects
+
+---
+
 ## [1.2.0] — 2026-02-16
 
 ### Added

@@ -31,12 +31,15 @@ grep -rn ": any" src/ --include="*.ts" --include="*.tsx" | grep -v ".d.ts"
 grep -rn "@ts-ignore\|@ts-expect-error" src/ --include="*.ts" --include="*.tsx"
 grep -rn "console\.log" src/ --include="*.ts" --include="*.tsx"
 grep -rn "TODO\|FIXME\|HACK\|XXX" src/ --include="*.ts" --include="*.tsx"
+# Optional — projects with strict CSS token rules (adjust paths)
+# grep -rE "#[0-9a-fA-F]{3,8}" src/ --include="*.tsx" | head
 ```
 
 - [ ] Zero `any` types
 - [ ] Zero `@ts-ignore` / `@ts-expect-error`
 - [ ] No `console.log` left (use logger utility if needed)
 - [ ] No `TODO` / `FIXME` / `HACK` left unresolved
+- [ ] CI security job: `npm audit` failures are not hidden with `continue-on-error` unless documented; threshold (e.g. critical-only) matches team policy
 
 ---
 
@@ -52,18 +55,24 @@ grep -rn "TODO\|FIXME\|HACK\|XXX" src/ --include="*.ts" --include="*.tsx"
 
 ## 4. Security
 
-- [ ] `npm audit` — no high/critical vulnerabilities
-- [ ] RLS enabled on all Supabase tables
+- [ ] `npm audit` — no high/critical vulnerabilities (or documented exception while upgrading framework)
+- [ ] RLS enabled on all Supabase tables — **including any new tables added this release**, with policies shipped in the **same** release as `CREATE TABLE`
+- [ ] Webhook signing secrets (per provider) and `CRON_SECRET` present in production env
 - [ ] No `SUPABASE_SERVICE_ROLE_KEY` in client code
+- [ ] Service-role code paths audited: every admin query scoped by tenant/org where applicable (`grep` audit)
 - [ ] Auth guards on all protected routes
-- [ ] Input validation on all forms and API endpoints
+- [ ] Input validation on all forms and API endpoints (use `parseBody` in Next.js routes)
 - [ ] No `dangerouslySetInnerHTML` without DOMPurify
+- [ ] No `.select('*')` in API routes — all Supabase queries use explicit column lists
+- [ ] Idempotency guards on state-changing operations (subscriptions, payments, activations)
 
 ---
 
 ## 5. Data
 
-- [ ] Database migrations applied to production
+- [ ] **All pending database migrations applied to production** (verify with migration history)
+- [ ] **Supabase TypeScript types regenerated** (or verified) after schema changes — `supabase gen types` / CI step — so `database.types.ts` matches production
+- [ ] Rollback scripts exist for every migration in this release
 - [ ] Schema matches what the code expects
 - [ ] Seed data / test data removed from production
 - [ ] No hardcoded mock data in production builds
@@ -97,9 +106,12 @@ grep -rn "TODO\|FIXME\|HACK\|XXX" src/ --include="*.ts" --include="*.tsx"
 
 ---
 
-## 8. Monitoring (if applicable)
+## 8. Monitoring
 
-- [ ] Error tracking configured (Sentry, LogRocket, etc.)
+- [ ] Error tracking configured (Sentry recommended)
+- [ ] `NEXT_PUBLIC_SENTRY_DSN` set in hosting platform env vars (for Next.js projects)
+- [ ] `SENTRY_AUTH_TOKEN` set for source map uploads (server-only — no `NEXT_PUBLIC_` prefix)
+- [ ] `app/error.tsx` and `app/not-found.tsx` exist (Next.js projects)
 - [ ] Critical flows have logging
 - [ ] Health check endpoint exists (for APIs)
 - [ ] Alerts configured for:
@@ -163,7 +175,8 @@ If you ran a migration that broke things:
 | RLS too restrictive | Users can't access data | Test RLS with non-admin user |
 | Migration fails | App crashes on data access | Rollback migration, fix, redeploy |
 | API rate limit | External calls fail | Implement rate limiting/retry |
-| Bundle too large | Slow page loads | Run bundle visualizer, remove deps |
+| Bundle too large | Slow page loads | Run bundle visualizer, remove deps; shrink `'use client'` boundaries on chart-heavy pages |
+| Webhook 401/403 storms | Provider retries | Verify signing secret env, raw-body verification, and middleware allows webhook path |
 
 ---
 
@@ -200,4 +213,4 @@ Never deploy on Fridays unless it's a critical hotfix.
 
 ## Last Updated
 
-February 2026
+April 2026

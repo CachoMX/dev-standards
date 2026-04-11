@@ -23,8 +23,8 @@ This repo serves as the single source of truth for:
 When starting any new project:
 
 1. Read `errors/common-errors-and-lessons.md` — mandatory before writing any code
-2. Follow `architecture/stack-defaults.md` for tech stack decisions
-3. Use `architecture/bulletproof-react-prompt.md` as your Claude Code prompt
+2. Follow `architecture/stack-defaults.md` for tech stack decisions (Vite + React) or `architecture/nextjs.md` for Next.js App Router projects
+3. Use `architecture/bulletproof-react-prompt.md` as your Claude Code prompt (Vite projects)
 4. Copy `templates/CLAUDE.md.template` into your project root and fill in project details
 5. Copy `templates/.env.example.template` and fill in values
 6. Copy `ci-cd/ci.yml` to `.github/workflows/ci.yml`
@@ -44,6 +44,7 @@ dev-standards/
 ├── architecture/
 │   ├── stack-defaults.md                  # Default tech stack for all apps
 │   ├── api-patterns.md                    # API response format, pagination, error codes
+│   ├── nextjs.md                          # Next.js App Router standards (force-dynamic, parseBody, Sentry, etc.)
 │   ├── bulletproof-react-prompt.md        # Claude Code prompt for new projects
 │   └── bulletproof-react-refactor.md      # Claude Code prompt for refactoring existing projects
 ├── ci-cd/
@@ -165,4 +166,4 @@ Share this repo with Ricardo, Marco, Ruth, and the rest of the team:
 
 ## Last Updated
 
-February 2026
+April 2026

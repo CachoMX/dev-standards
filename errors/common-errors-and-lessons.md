@@ -26,7 +26,8 @@ Before writing ANY code, verify:
 - [ ] Remove all unused imports and variables
 
 **Styling & Architecture:**
-- [ ] Use CSS variables (not hardcoded colors like `bg-gray-800`)
+- [ ] Use CSS variables (not hardcoded colors like `bg-gray-800` or Tailwind palette classes)
+- [ ] Chart libraries (Recharts, etc.): no hex/rgba in `fill` / `stroke` / inline styles — map series colors to CSS variables
 - [ ] Follow bulletproof-react architecture (no cross-feature imports)
 - [ ] Business logic in `features/`, not in `app/` pages
 
@@ -37,10 +38,18 @@ Before writing ANY code, verify:
 - [ ] Add user-facing error messages
 - [ ] Validate data quality before filtering (check actual DB values)
 
+**Next.js Specific (when using App Router):**
+- [ ] `app/error.tsx` + `app/not-found.tsx` exist
+- [ ] Any layout/route using auth has `export const dynamic = 'force-dynamic'`
+- [ ] All **non-webhook** POST/PATCH routes use `parseBody(req, schema)` — **signed webhooks** must use `await request.text()`, verify HMAC/signature, then `JSON.parse` (see `architecture/api-patterns.md`)
+- [ ] Every webhook path is authenticated and listed in middleware public/bypass rules if needed
+- [ ] No `.select('*')` in any API route — explicit column lists only
+- [ ] No `window.location.reload()` — use `router.refresh()` instead
+
 **Build & Deployment:**
 - [ ] Run `npm run type-check` successfully
 - [ ] Run `npm run lint` successfully
-- [ ] Run `npm run build` successfully
+- [ ] Run `npm run build` successfully (catches Next.js prerender errors — dev mode does NOT)
 - [ ] No hardcoded mock data in production code
 
 ---
@@ -423,6 +432,192 @@ Based on analysis of previous repos (PingItNow, closers-quantum), here are addit
 3. Test with different timezones
 4. Don't convert dates to local time unnecessarily
 5. Preserve original date format when editing
+
+### ❌ Error: Next.js prerender crash — missing `force-dynamic`
+**What happened** (PingItNow):
+- `next build` crashed with: `Error: Route /dashboard couldn't be rendered statically because it used headers`
+- Dashboard layout called `auth()` (Clerk) which reads cookies — a runtime-only operation
+- Without `force-dynamic`, Next.js tried to prerender the route at build time and failed
+
+**Root cause:**
+- Any Next.js route that reads `headers()`, `cookies()`, or calls auth functions must be dynamic
+- This includes layouts — if the layout is dynamic, child pages inherit it
+- Missing this on ONE layout breaks ALL child routes under it
+
+**✅ Prevention:**
+```typescript
+// Add to app/dashboard/layout.tsx (and any layout/route using auth)
+export const dynamic = 'force-dynamic';
+```
+Rules:
+1. Add `force-dynamic` to any layout wrapping authenticated content
+2. Add it to every API route that calls `auth()` or reads cookies
+3. Run `bun run build` (or `next build`) locally before PRs — this error only surfaces at build time, not in dev mode
+
+---
+
+### ❌ Error: `window.location.reload()` causes full page reload in Next.js
+**What happened** (PingItNow):
+- `window.location.reload()` used after accepting cookie consent
+- This triggers a full browser reload — re-downloads JS, loses React state, re-runs all analytics initialisation twice
+
+**Root cause:**
+- `window.location.reload()` is a browser API that exits the React/Next.js runtime entirely
+- In Next.js, `router.refresh()` re-fetches server data and re-renders only what changed
+
+**✅ Prevention:**
+```typescript
+// ❌ WRONG — full browser reload
+window.location.reload();
+
+// ✅ CORRECT — Next.js soft refresh
+import { useRouter } from 'next/navigation';
+const router = useRouter();
+router.refresh();
+```
+Use `router.refresh()` whenever you need to re-fetch server-side data after a client-side action (cookie consent, settings save, OAuth connect).
+
+---
+
+### ❌ Error: `SELECT *` leaking data through API routes
+**What happened** (PingItNow GOD-AUDIT):
+- 40+ API routes used `.select('*')` on Supabase tables
+- Any new column added to `tenants`, `transactions`, or `payment_links` was immediately exposed through every existing endpoint
+- Sensitive columns (tokens, internal flags, raw webhook payloads) were leaking to the client
+
+**Root cause:**
+- `SELECT *` fetches everything that exists at query time, including columns added after the route was written
+- When a table gains a `webhook_secret` or `stripe_secret_key` column, ALL existing `SELECT *` routes expose it instantly
+
+**✅ Prevention:**
+```typescript
+// ❌ WRONG
+const { data } = await supabaseAdmin.from('tenants').select('*');
+
+// ✅ CORRECT
+const { data } = await supabaseAdmin
+  .from('tenants')
+  .select('id, email, subscription_status, plan_id');
+```
+Add to code review checklist: "No `.select('*')` in API routes."
+
+---
+
+### ❌ Error: Stripe SDK union types causing TypeScript errors
+**What happened** (PingItNow):
+- `paymentIntent.customer` assigned to `string` variable — TypeScript error
+- Stripe's `PaymentIntent.customer` is typed as `string | Stripe.Customer | Stripe.DeletedCustomer | null`
+- The object variant occurs when `expand: ['customer']` is used in the API call
+
+**Root cause:**
+- Many Stripe resource fields are "expandable references" — they can be either a bare ID string or a full expanded object
+- Assigning without narrowing breaks with strict TypeScript
+
+**✅ Prevention:**
+```typescript
+// ❌ WRONG — breaks when customer is expanded
+const customerId: string = paymentIntent.customer;
+
+// ✅ CORRECT — handle all variants
+const customerId =
+  typeof paymentIntent.customer === 'string'
+    ? paymentIntent.customer
+    : paymentIntent.customer?.id ?? null;
+```
+Apply this pattern to: `PaymentIntent.customer`, `Invoice.customer`, `Subscription.customer`, `Charge.customer`, `PaymentMethod.customer`, and any other expandable Stripe reference.
+
+---
+
+### ❌ Error: Vitest coverage threshold failure from including service wrappers
+**What happened** (PingItNow):
+- `vitest.config.ts` set `include: ['lib/**/*.ts']`
+- This included Supabase, Stripe, and PostHog service wrappers that make real external calls — 0% testable in unit tests
+- Overall coverage dropped to 18%, failing all thresholds
+
+**Root cause:**
+- Coverage % = (lines tested) / (lines in scope). Including untestable wrappers dilutes the denominator without adding to the numerator.
+- Only include files that contain pure logic (validation, utilities, helpers, transformations)
+
+**✅ Prevention:**
+```typescript
+// vitest.config.ts
+coverage: {
+  // ✅ Scope to testable logic only
+  include: ['lib/validation/**/*.ts', 'lib/utils/**/*.ts'],
+  // ❌ NOT 'lib/**/*.ts' — that pulls in Supabase/Stripe/PostHog wrappers
+  thresholds: { statements: 80, branches: 80, functions: 80, lines: 80 },
+}
+```
+Rule: Only include directories in coverage that contain pure functions. Service wrappers (Supabase client, Stripe SDK, email providers) should be tested via integration tests, not unit tests.
+
+---
+
+### ❌ Error: Hardcoded colors inside chart / SVG components
+**What happened** (multi-tenant dashboard audit):
+- Recharts `<Cell fill="#22c55e" />`, heatmaps, and outcome-color maps used raw hex/rgba
+- Violates theme systems: charts did not respect dark mode or per-tenant theme switches
+- Same issue as Tailwind palette classes — easy to miss because lint only scans some file patterns
+
+**Root cause:**
+- Chart libraries encourage inline `fill`/`stroke` strings
+- Utility files (`outcome-colors.ts`, etc.) returned hex literals instead of CSS variable names
+
+**✅ Prevention:**
+1. Pass color as `var(--color-success)` (or a className + CSS targeting SVG) — verify in browser across themes
+2. Run repo CSS audits that include `tsx`/`ts` (hex and `rgba(`), not only CSS files
+3. For dynamic series, resolve `getComputedStyle(document.documentElement).getPropertyValue('--token')` in client charts only when necessary; prefer static token names from design system
+
+---
+
+### ❌ Error: `xlsx` / SheetJS for server-side Excel generation
+**What happened** (dependency audit):
+- `xlsx` (SheetJS) flagged with high-severity issues (prototype pollution / ReDoS) in common audit reports
+- Used for commission/report exports — parsing or building workbooks on the server
+
+**Root cause:**
+- Default spreadsheet package choice without checking `npm audit` impact
+
+**✅ Prevention:**
+1. Prefer **`exceljs`** (or another maintained alternative) for **generating** workbooks on the server
+2. Avoid parsing **untrusted** `.xlsx` in the browser; if required, isolate and audit the library choice
+3. After swapping libraries, async-ify callers (`writeBuffer` / stream APIs are async in exceljs)
+
+---
+
+### ❌ Error: Vitest tests fail when assigning `process.env.NODE_ENV`
+**What happened:**
+- Test tried `process.env.NODE_ENV = 'production'` to exercise a branch
+- Node/Vitest treats `NODE_ENV` as read-only in some setups — assignment throws or is ignored
+
+**Root cause:**
+- Direct mutation of a special-cased environment variable
+
+**✅ Prevention:**
+```typescript
+import { vi } from 'vitest';
+
+// ✅ Prefer stubbing for the duration of the test
+vi.stubEnv('NODE_ENV', 'production');
+// ... test ...
+vi.unstubAllEnvs();
+```
+
+---
+
+### ❌ Error: Stale README / agent instructions vs real repo layout
+**What happened** (GOD-AUDIT):
+- README still described "Phase 2" features that were already shipped
+- Paths in `CLAUDE.md` or tasks docs pointed at `src/...` vs root `app/...` (or the opposite), confusing agents and new contributors
+
+**Root cause:**
+- Documentation not updated per release; copy-paste from older stack versions
+
+**✅ Prevention:**
+1. After refactors, grep docs for old paths and fix in the same PR when possible
+2. Keep a single "source of truth" section in project `CLAUDE.md` (where routes live, where features live)
+3. Treat doc drift as tech debt — it causes wrong code to be written confidently
+
+---
 
 ### ❌ Error: Pagination filter logic
 **What happened** (vet-manager):
@@ -1308,4 +1503,4 @@ safeContacts.forEach(...); // Safe to use array methods
 - Include specific code examples for clarity
 - Keep prevention steps actionable and specific
 - Review [github-error-patterns.md](./github-error-patterns.md) and [all-repos-analysis.md](./all-repos-analysis.md) for raw commit data
-- **Last updated:** February 16, 2026 - Added data sync & integration errors from aso-platform project (pagination limits, database filtering, foreign key mapping, demo data cleanup, hardcoded mocks, TypeScript null safety)
+- **Last updated:** April 10, 2026 — Next.js webhook vs `parseBody` checklist; chart/SVG theming; `exceljs` vs `xlsx`; Vitest `vi.stubEnv`; documentation drift; (plus February 16, 2026 aso-platform integration errors)
