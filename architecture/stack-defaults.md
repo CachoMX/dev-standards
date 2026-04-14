@@ -1,10 +1,22 @@
 # Stack Defaults
 
-**Last updated:** February 2026
+**Last updated:** April 2026
 
 ## Default Tech Stack for All Apps
 
 Unless explicitly specified otherwise, every app is built with this stack:
+
+### Standard Build Profiles
+
+Use this matrix before you scaffold:
+
+| Profile | Use when | Primary docs |
+|---|---|---|
+| Vite + React App (default) | Authenticated dashboards, internal tools, admin panels | `architecture/stack-defaults.md`, `architecture/api-patterns.md` |
+| Next.js App Router | Public pages, SEO, webhooks, auth middleware, billing pages | `architecture/nextjs.md`, `architecture/api-patterns.md` |
+| Fastify API Service | Dedicated backend, streaming, heavy webhook/worker workloads | `architecture/fastify.md`, `security/security-standards.md` |
+
+If a project includes more than one profile (for example Next.js frontend + Fastify API), apply both standards sets and keep shared contracts in `architecture/api-patterns.md`.
 
 ### Core
 

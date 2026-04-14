@@ -12,6 +12,8 @@ Analyze my existing React project and refactor it to STRICTLY follow the "Bullet
 
 ## MANDATORY: Read Before Refactoring
 
+- `architecture/refactor-playbook.md` (required process and release gates)
+
 ### TypeScript Strict Rules (ZERO tolerance)
 - Zero `any` types — use `unknown` + type guards or Zod
 - Zero `@ts-ignore` or `@ts-expect-error`

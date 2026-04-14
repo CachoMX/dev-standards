@@ -9,11 +9,22 @@ All notable changes to dev-standards are documented here.
 ### Added
 - `architecture/nextjs.md` — SDK API version pinning (single source of truth), Clerk redirect deprecation policy, deploy gates for clean-build parity, auth-boundary smoke, and warning-free auth/billing flows
 - `architecture/api-patterns.md` — expanded core API rules: side-effect-free `GET`/`HEAD`, explicit auth failure semantics, and required auth-boundary smoke matrix
+- `architecture/refactor-playbook.md` — mandatory phased refactor workflow (baseline, slice plan, blocking gates, rollback expectations)
+- `scripts/audit-standards.ps1` — one-command repo hygiene audit for markdown links and accidental brace-named directories
 - `ci-cd/ci.yml` — dynamic source directory scanning (`src/app/lib/components/hooks/pages`), SDK version drift check, placeholder env marker check, and blocking `npm audit` behavior
 - `ci-cd/ci-cd-guide.md` — documentation for new CI gates (SDK drift + env realism)
 - `testing/testing-strategy.md` — mandatory auth-boundary smoke tests and blocking smoke subset guidance in CI
 - `deployment/deploy-checklist.md` — clean install build parity, SDK drift checklist, and post-deploy auth/billing smoke assertions
 - `errors/common-errors-and-lessons.md` — new incident patterns: SDK API version drift, false-positive signed-out smoke, Clerk deprecation warnings on auth/billing paths
+
+### Improved
+- `README.md` — stack profile routing in Quick Start, refactor playbook references, and monthly repository hygiene cadence
+- `git/git-workflow.md` — supports both `develop/main` and `qa/prod` release lanes with explicit integration/production guidance
+- `agents/*.md` — refactor playbook checks added to developer, tester, reviewer, and orchestrator roles
+- `templates/CLAUDE.md.template` — removed `select('*')` examples and raw console logging from standard snippets
+
+### Fixed
+- `errors/common-errors-and-lessons.md` — removed broken references to missing local markdown files
 
 ---
 

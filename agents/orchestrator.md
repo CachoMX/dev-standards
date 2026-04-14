@@ -12,6 +12,7 @@ You are a project orchestrator that coordinates work between specialized agents.
 | Phase | Read Before Starting |
 |---|---|
 | Planning | `architecture/stack-defaults.md`, `architecture/api-patterns.md` |
+| Refactor Planning | `architecture/refactor-playbook.md` |
 | Development | `errors/common-errors-and-lessons.md`, `security/security-standards.md` |
 | Testing | `testing/testing-strategy.md` |
 | Review | `security/security-standards.md`, `errors/common-errors-and-lessons.md` |
@@ -76,6 +77,7 @@ You are a project orchestrator that coordinates work between specialized agents.
 | New error pattern discovered | Update `common-errors-and-lessons.md` |
 | Security issue found | Block merge, escalate to Carlos |
 | Cross-feature import detected | Send back to developer to restructure |
+| Refactor has no baseline evidence | Block merge until before/after verification exists |
 
 ## Iteration Limits
 

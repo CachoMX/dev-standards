@@ -9,6 +9,7 @@ Centralized development standards, architecture guides, error patterns, and Clau
 This repo serves as the single source of truth for:
 
 - **Architecture patterns** — Bulletproof React structure, stack defaults, API design, and coding standards
+- **Refactoring playbook** — safe migration phases, gates, and rollback standards
 - **Error prevention** — Documented errors and lessons learned across all projects
 - **CI/CD** — GitHub Actions pipeline and deployment automation
 - **Git workflow** — Branch strategy, commit conventions, PR process
@@ -23,14 +24,17 @@ This repo serves as the single source of truth for:
 When starting any new project:
 
 1. Read `errors/common-errors-and-lessons.md` — mandatory before writing any code
-2. Follow `architecture/stack-defaults.md` for tech stack decisions (Vite + React) or `architecture/nextjs.md` for Next.js App Router projects
-3. Use `architecture/bulletproof-react-prompt.md` as your Claude Code prompt (Vite projects)
-4. Copy `templates/CLAUDE.md.template` into your project root and fill in project details
-5. Copy `templates/.env.example.template` and fill in values
-6. Copy `ci-cd/ci.yml` to `.github/workflows/ci.yml`
-7. Set up branch protection following `ci-cd/ci-cd-guide.md`
-8. Share `git/git-workflow.md` with the team
-9. For Next.js apps, enforce auth-boundary smoke (signed-out + signed-in) before certifying production readiness
+2. Choose stack using `architecture/stack-defaults.md`
+3. If the project is Next.js, also apply `architecture/nextjs.md`
+4. If the project includes a Fastify API service, also apply `architecture/fastify.md`
+5. Use `architecture/bulletproof-react-prompt.md` as your Claude Code prompt (Vite projects)
+6. For existing codebases, run `architecture/refactor-playbook.md` before moving files
+7. Copy `templates/CLAUDE.md.template` into your project root and fill in project details
+8. Copy `templates/.env.example.template` and fill in values
+9. Copy `ci-cd/ci.yml` to `.github/workflows/ci.yml`
+10. Set up branch protection following `ci-cd/ci-cd-guide.md`
+11. Share `git/git-workflow.md` with the team
+12. For Next.js apps, enforce auth-boundary smoke (signed-out + signed-in) before certifying production readiness
 
 When deploying:
 
@@ -48,6 +52,7 @@ dev-standards/
 │   ├── api-patterns.md                    # API response format, pagination, error codes
 │   ├── nextjs.md                          # Next.js App Router standards (force-dynamic, parseBody, Sentry, etc.)
 │   ├── fastify.md                         # Fastify API server standards (plugins, JWT, streaming, CVE upgrades)
+│   ├── refactor-playbook.md               # Safe refactor phases and release gates
 │   ├── performance.md                     # Core Web Vitals, bundles, React/query performance
 │   ├── accessibility.md                   # WCAG 2.1 AA checklist and patterns
 │   ├── bulletproof-react-prompt.md        # Claude Code prompt for new projects
@@ -69,7 +74,8 @@ dev-standards/
 │   ├── CLAUDE.md.template                 # Template for project-level CLAUDE.md
 │   └── .env.example.template              # Template for environment variables
 ├── scripts/
-│   └── setup-new-project.sh               # Automated new project setup
+│   ├── setup-new-project.sh               # Automated new project setup
+│   └── audit-standards.ps1                # Repo hygiene audit (links + accidental dirs)
 ├── agents/
 │   ├── developer.md                       # Developer agent instructions
 │   ├── code-reviewer.md                   # Code review agent instructions
@@ -100,6 +106,12 @@ Before any development, read these files from the dev-standards repo:
 - `../dev-standards/errors/common-errors-and-lessons.md`
 - `../dev-standards/architecture/stack-defaults.md`
 - `../dev-standards/security/security-standards.md`
+```
+
+For refactors in existing projects:
+
+```bash
+claude "Read dev-standards/architecture/refactor-playbook.md and refactor this module in safe slices: ..."
 ```
 
 ### For Claude.ai (Chat)
@@ -169,6 +181,22 @@ Share this repo with Ricardo, Marco, Ruth, and the rest of the team:
 5. **CI must pass** — no merging to main without green CI
 6. **Security review before deploy** — run the checklist, no shortcuts
 
+## Repository Hygiene Cadence
+
+Run this at least once per month:
+
+1. Validate markdown links across all `.md` files
+2. Remove empty or accidental directories/files
+3. Confirm README structure matches actual tracked files
+4. Update `CHANGELOG.md` and "Last updated" timestamps
+5. Promote new recurring incidents into `errors/common-errors-and-lessons.md`
+
+Quick command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/audit-standards.ps1
+```
+
 ## Last Updated
 
-April 2026 — Added `architecture/fastify.md`; security: Supabase RPC authorization, column-level triggers, JWT rotation, Android cert pinning; errors: Vitest `vi.hoisted()`, per-file coverage thresholds, CVE major-version upgrade process
+April 2026 — Added `architecture/refactor-playbook.md`; strengthened stack/profile routing in Quick Start; formalized monthly repo hygiene cadence

@@ -100,6 +100,77 @@ CREATE POLICY "Users delete own org data"
 - [ ] Service role key is NEVER used in client code
 - [ ] Test with different user accounts to verify isolation
 
+### Supabase RPC Authorization — `SECURITY DEFINER` is not RLS
+
+**RLS does not protect Supabase RPCs (stored functions).** A function with `SECURITY DEFINER` runs with the privileges of the function owner (usually `postgres`) and **bypasses RLS entirely**. Any authenticated user can call it unless you explicitly restrict access.
+
+```sql
+-- ❌ DANGEROUS — any authenticated user can call this and bypass RLS
+CREATE OR REPLACE FUNCTION transfer_credits(...)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  -- runs as postgres — no RLS, no auth check
+END;
+$$;
+
+-- ✅ CORRECT — restrict to service_role + add caller identity guard
+REVOKE ALL ON FUNCTION transfer_credits FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION transfer_credits TO service_role;
+
+CREATE OR REPLACE FUNCTION transfer_credits(p_from_id uuid, ...)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  -- Verify caller is the account they claim to be
+  IF auth.uid() != p_from_id THEN
+    RAISE EXCEPTION 'Unauthorized';
+  END IF;
+  -- ... business logic ...
+END;
+$$;
+```
+
+**Rule:** Every `SECURITY DEFINER` function must have `REVOKE ALL ON FUNCTION ... FROM PUBLIC` immediately after `CREATE FUNCTION`. Functions that should only be called by backend code (server-to-server) should grant only `service_role`.
+
+**Audit query — find unrestricted SECURITY DEFINER functions:**
+```sql
+SELECT routine_name, security_type
+FROM information_schema.routines
+WHERE routine_schema = 'public'
+  AND security_type = 'DEFINER';
+-- For each result: verify REVOKE + GRANT exist in migrations
+```
+
+### Column-Level Restrictions via Triggers
+
+When an `UPDATE` RLS policy is too coarse (allows updating the row but should block specific columns), use a trigger:
+
+```sql
+CREATE OR REPLACE FUNCTION restrict_sensitive_columns()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  -- Only service_role can change role, credit_balance, or password_hash
+  IF current_setting('role') != 'service_role' THEN
+    IF NEW.role IS DISTINCT FROM OLD.role THEN
+      RAISE EXCEPTION 'Cannot change role directly';
+    END IF;
+    IF NEW.credit_balance IS DISTINCT FROM OLD.credit_balance THEN
+      RAISE EXCEPTION 'Cannot change credit_balance directly';
+    END IF;
+    IF NEW.password_hash IS DISTINCT FROM OLD.password_hash THEN
+      RAISE EXCEPTION 'Cannot change password_hash directly';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER enforce_column_restrictions
+  BEFORE UPDATE ON accounts
+  FOR EACH ROW EXECUTE FUNCTION restrict_sensitive_columns();
+```
+
+Use column-level triggers when: (a) you have sensitive derived fields that should only change via RPCs, (b) your UPDATE RLS policy allows the row but must block specific columns.
+
 ### Query Safety
 
 ```typescript
@@ -249,6 +320,124 @@ export async function POST(req: Request) {
 This ensures: malformed JSON returns 400 immediately, every field is validated before any DB write, and error details are machine-readable for client-side field highlighting.
 
 **Webhook routes:** do not use this helper for the initial read — use `await req.text()`, verify the signature, then `JSON.parse` (see `architecture/api-patterns.md`).
+
+---
+
+## JWT Refresh Token Rotation (Replay Prevention)
+
+A stolen refresh token can be used indefinitely unless you implement rotation with JTI (JWT ID) tracking.
+
+```typescript
+// 1. On login — generate JTI and store it
+const jti = crypto.randomUUID()
+const refreshToken = jwt.sign(
+  { sub: userId, type: 'refresh', jti },
+  { expiresIn: '30d' }
+)
+// Store in DB: { jti, account_id, expires_at, used_at: null }
+await db.from('refresh_tokens').insert({ jti, account_id: userId, expires_at })
+
+// 2. On refresh — validate JTI is unused, then rotate
+const payload = jwt.verify(refreshToken) as { jti: string; sub: string }
+const { data: tokenRow } = await db.from('refresh_tokens')
+  .select('used_at').eq('jti', payload.jti).single()
+
+if (!tokenRow || tokenRow.used_at) {
+  // Token reuse detected — possible theft. Invalidate all tokens for this user.
+  return res.status(401).json({ error: 'Token already used or revoked' })
+}
+
+// Mark old token as used
+await db.from('refresh_tokens').update({ used_at: new Date() }).eq('jti', payload.jti)
+
+// Issue new refresh token with new JTI
+const newJti = crypto.randomUUID()
+const newRefreshToken = jwt.sign({ sub: payload.sub, type: 'refresh', jti: newJti }, { expiresIn: '30d' })
+await db.from('refresh_tokens').insert({ jti: newJti, account_id: payload.sub, expires_at })
+```
+
+**Rules:**
+- The `type: 'refresh'` claim prevents access tokens from being used as refresh tokens
+- Detect token reuse immediately — if `used_at` is set, someone is replaying an old token
+- Refresh tokens must include the bound device/context (`android_id`) if single-device enforcement applies
+- Clean up expired rows periodically (cron job or DB policy)
+
+---
+
+## Mobile / Android Security
+
+### Certificate Pinning (Android Network Security Config)
+
+For Android apps communicating with your API, cert pinning prevents MITM attacks even on compromised devices or rogue CAs.
+
+**Pin the intermediate CA, not the leaf certificate.**
+
+- Leaf certificates (from Let's Encrypt, etc.) renew every 60–90 days — pinning them breaks the app on every renewal
+- Intermediate CAs are stable for years — pin those instead
+- Always include a backup pin (the root CA) so you have a fallback if the intermediate rotates
+
+```xml
+<!-- app/src/main/res/xml/network_security_config.xml -->
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false">
+    <trust-anchors>
+      <certificates src="system" />
+    </trust-anchors>
+  </base-config>
+
+  <!-- Pin intermediate CA (stable across cert renewals) + root CA (backup) -->
+  <domain-config cleartextTrafficPermitted="false">
+    <domain includeSubdomains="true">api.yourapp.com</domain>
+    <pin-set expiration="2028-01-01">
+      <!-- Primary: intermediate CA SPKI SHA-256 -->
+      <pin digest="SHA-256">INTERMEDIATE_CA_SPKI_BASE64=</pin>
+      <!-- Backup: root CA SPKI SHA-256 -->
+      <pin digest="SHA-256">ROOT_CA_SPKI_BASE64=</pin>
+    </pin-set>
+  </domain-config>
+
+  <!-- Allow cleartext for local dev only -->
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="true">10.0.2.2</domain>
+    <domain includeSubdomains="true">localhost</domain>
+  </domain-config>
+</network-security-config>
+```
+
+**How to get the SPKI SHA-256 hash:**
+```bash
+# Leaf cert (for reference — DO NOT pin this)
+echo | openssl s_client -connect api.yourapp.com:443 -servername api.yourapp.com 2>/dev/null \
+  | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER \
+  | openssl dgst -sha256 -binary | openssl enc -base64
+
+# Intermediate CA (USE THIS as primary pin)
+echo | openssl s_client -connect api.yourapp.com:443 -servername api.yourapp.com -showcerts 2>/dev/null \
+  | awk '/-----BEGIN CERTIFICATE-----/{c++} c==2{print}' \
+  | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER \
+  | openssl dgst -sha256 -binary | openssl enc -base64
+
+# Root CA (USE THIS as backup pin)
+echo | openssl s_client -connect api.yourapp.com:443 -servername api.yourapp.com -showcerts 2>/dev/null \
+  | awk '/-----BEGIN CERTIFICATE-----/{c++} c==3{print}' \
+  | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER \
+  | openssl dgst -sha256 -binary | openssl enc -base64
+```
+
+**Pitfall: `android:usesCleartextTraffic="true"` overrides `network_security_config`**
+
+If `AndroidManifest.xml` contains `android:usesCleartextTraffic="true"`, it takes precedence over the network security config and allows cleartext everywhere. Remove it — the network security config handles this per-domain.
+
+```xml
+<!-- ❌ WRONG — allows cleartext despite network_security_config -->
+<application android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config">
+
+<!-- ✅ CORRECT — let network_security_config control cleartext per-domain -->
+<application android:networkSecurityConfig="@xml/network_security_config">
+```
+
+**pin-set `expiration` date:** Set to ~6 months before the intermediate CA expires. When it expires, Android falls back to normal CA validation instead of failing — this is a safety net, not a primary mechanism.
 
 ---
 

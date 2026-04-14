@@ -136,6 +136,18 @@ grep -rn "TODO\|FIXME\|HACK\|XXX" src/ --include="*.ts" --include="*.tsx"
 
 ---
 
+## 8.1 Refactor Release Gates (when applicable)
+
+If this release includes structural refactors (`refactor/*` or large module moves), also require:
+
+- [ ] Refactor followed `architecture/refactor-playbook.md`
+- [ ] Critical flows validated before/after with matching behavior
+- [ ] No stale dual-path code left (old + new implementation both active)
+- [ ] PR includes rollback note for risky slices (auth, billing, integrations)
+- [ ] Explicit sign-off from reviewer on boundary rules (no cross-feature imports, no side effects in `GET`)
+
+---
+
 ## Post-Deploy Verification
 
 After deploying:
@@ -168,11 +180,9 @@ If something breaks in production:
 # Revert to last known good commit
 git revert HEAD
 git push origin main
-
-# Or reset to specific commit
-git reset --hard <last-good-commit>
-git push origin main --force  # Use with caution
 ```
+
+Avoid `git reset --hard` + force push on shared branches unless incident commander approval is explicit and documented.
 
 ### Database
 If you ran a migration that broke things:

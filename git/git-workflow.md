@@ -3,14 +3,20 @@
 ## Branch Strategy
 
 ```
-main          ← Production. Protected. Only merges from develop or hotfix.
-develop       ← Integration branch. All features merge here first.
+main/prod     ← Production. Protected. Only merges from integration or hotfix.
+develop/qa    ← Integration branch. All features merge here first.
 feature/*     ← New features
 fix/*         ← Bug fixes
 hotfix/*      ← Urgent production fixes (branch from main)
 refactor/*    ← Code refactoring (no behavior change)
 chore/*       ← Config, dependencies, CI, docs
 ```
+
+Use one pair consistently per repo:
+- `develop` → `main`
+- `qa` → `prod`
+
+Do not mix both pairs in the same project without a documented migration plan.
 
 ### Branch Naming
 
@@ -98,11 +104,11 @@ changes
 ### Before Creating a PR
 
 ```bash
-# 1. Make sure you're up to date with develop
-git checkout develop
-git pull origin develop
+# 1. Make sure you're up to date with your integration branch
+git checkout develop   # or qa
+git pull origin develop  # or qa
 git checkout your-branch
-git rebase develop
+git rebase develop  # or qa
 
 # 2. Run all checks locally
 npm run type-check
@@ -111,7 +117,7 @@ npm run build
 npm run test -- --run
 
 # 3. Review your own changes
-git diff develop..your-branch
+git diff develop..your-branch  # or qa..your-branch
 ```
 
 ### PR Title Format
@@ -149,7 +155,7 @@ fix(deals): handle null close_date in date range filter
 
 ### PR Rules
 
-1. Every PR must target `develop` (not `main`, unless hotfix)
+1. Every PR must target the integration branch (`develop` or `qa`, not production, unless hotfix)
 2. PR must pass CI before merge
 3. PR should be small and focused — one feature or fix per PR
 4. Don't mix refactoring with feature work in the same PR
@@ -172,20 +178,20 @@ Before approving a PR, verify:
 
 ## Release Process
 
-### Regular Release (develop → main)
+### Regular Release (`develop` → `main` OR `qa` → `prod`)
 
 ```bash
-# 1. Ensure develop is stable and CI passes
-git checkout develop
-git pull origin develop
+# 1. Ensure integration branch is stable and CI passes
+git checkout develop   # or qa
+git pull origin develop  # or qa
 
-# 2. Create PR from develop to main
+# 2. Create PR from integration to production
 # Title: "Release: v1.x.x"
 # List all features and fixes since last release
 
 # 3. After merge, tag the release
-git checkout main
-git pull origin main
+git checkout main   # or prod
+git pull origin main  # or prod
 git tag -a v1.x.x -m "Release v1.x.x: [brief description]"
 git push origin v1.x.x
 ```
@@ -193,16 +199,16 @@ git push origin v1.x.x
 ### Hotfix (urgent production fix)
 
 ```bash
-# 1. Branch from main
-git checkout main
-git pull origin main
+# 1. Branch from production
+git checkout main   # or prod
+git pull origin main  # or prod
 git checkout -b hotfix/critical-bug-description
 
 # 2. Fix the issue, commit, push
 git commit -m "hotfix(scope): fix critical bug description"
 git push origin hotfix/critical-bug-description
 
-# 3. Create PR to main AND develop
+# 3. Create PR to production AND integration branch
 # Both PRs must pass CI before merge
 ```
 

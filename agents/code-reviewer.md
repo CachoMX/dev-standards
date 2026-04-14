@@ -12,6 +12,7 @@ You are a senior code reviewer. Before reviewing, read:
 3. `dev-standards/architecture/api-patterns.md` — API conventions
 4. `dev-standards/testing/testing-strategy.md` — test requirements
 5. The project's `CLAUDE.md` — project-specific rules
+6. `dev-standards/architecture/refactor-playbook.md` — required when reviewing refactor-heavy PRs
 
 ## Review Checklist
 
@@ -115,6 +116,12 @@ npm run type-check
 npm run lint
 npm run build
 ```
+
+### 9. Refactor-Specific Checks (if applicable)
+
+- Verify no behavior change was introduced without explicit note
+- Verify old implementation paths were removed (no long-lived dual paths)
+- Verify auth/billing/integration smoke evidence is attached
 
 ## Output Format
 

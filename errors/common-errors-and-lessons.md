@@ -1647,5 +1647,5 @@ Increase thresholds incrementally as test coverage grows. Never set a global thr
 - Focus on errors that happen repeatedly across projects
 - Include specific code examples for clarity
 - Keep prevention steps actionable and specific
-- Review [github-error-patterns.md](./github-error-patterns.md) and [all-repos-analysis.md](./all-repos-analysis.md) for raw commit data
+- Review `CHANGELOG.md` and recent merged PRs for raw incident context and recurrence trends
 - **Last updated:** April 10, 2026 — Supabase RPC privilege escalation; Vitest `vi.hoisted()` for mocks; Vitest per-file coverage thresholds; CVE major version upgrade process; (plus earlier: Next.js webhook vs `parseBody` checklist; chart/SVG theming; `exceljs` vs `xlsx`; Vitest `vi.stubEnv`; documentation drift)

@@ -272,7 +272,7 @@ import type { Lead, LeadFilters } from '../types';
 export async function getLeads(filters: LeadFilters = {}) {
   let query = supabase
     .from('leads')
-    .select('*', { count: 'exact' })
+    .select('id, name, email, phone, source, status, created_at, organization_id', { count: 'exact' })
     .order('created_at', { ascending: false });
 
   if (filters.status) {
@@ -318,7 +318,7 @@ export function useCreateLead() {
       const { data, error } = await supabase
         .from('leads')
         .insert(input)
-        .select()
+        .select('id, name, email, phone, source, status, created_at, organization_id')
         .single();
 
       if (error) throw error;
@@ -393,9 +393,8 @@ export function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
         toast.success('Lead created successfully');
         onSuccess();
       },
-      onError: (error) => {
+      onError: () => {
         toast.error('Failed to create lead');
-        console.error(error);
       },
     });
   };
@@ -476,6 +475,7 @@ export function LeadsPage() {
 // src/features/sync/api/sync-hubspot-deals.ts
 import { hubspotClient } from '@/lib/hubspot';
 import { supabase } from '@/lib/supabase';
+import { logger } from '@/lib/logger'; // replace with your project's logger utility
 
 export async function syncHubSpotDeals() {
   let after: string | undefined = undefined;
@@ -484,7 +484,7 @@ export async function syncHubSpotDeals() {
 
   // Fetch all pages
   do {
-    console.log(`📄 Fetching page ${page}...`);
+    logger.info('sync.hubspot.page_fetch', { page });
 
     const response = await hubspotClient.crm.deals.basicApi.getPage(100, after);
     allDeals.push(...response.results);
@@ -492,7 +492,7 @@ export async function syncHubSpotDeals() {
     page++;
   } while (after);
 
-  console.log(`✅ Fetched ${allDeals.length} total deals`);
+  logger.info('sync.hubspot.complete', { totalDeals: allDeals.length });
 
   // Build contact lookup map for foreign keys
   const { data: contacts } = await supabase.from('contacts').select('id, hubspot_id');

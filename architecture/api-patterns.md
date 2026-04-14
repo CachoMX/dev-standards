@@ -252,7 +252,7 @@ async function fetchLeadsPaginated(page: number, perPage: number) {
 
   const { data, error, count } = await supabase
     .from('leads')
-    .select('*', { count: 'exact' })
+    .select('id, name, email, source, status, created_at, organization_id', { count: 'exact' })
     .order('created_at', { ascending: false })
     .range(from, to);
 
@@ -307,7 +307,7 @@ interface LeadFilters {
 function buildLeadsQuery(filters: LeadFilters) {
   let query = supabase
     .from('leads')
-    .select('*', { count: 'exact' });
+    .select('id, name, email, source, status, created_at, organization_id', { count: 'exact' });
 
   if (filters.status) {
     query = query.eq('status', filters.status);

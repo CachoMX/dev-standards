@@ -48,6 +48,7 @@ Test what matters, not everything. Focus on code that handles money, data, or us
 3. **Utility function tests** — for every function in `utils/`
 4. **Error boundary test** — verify errors are caught, not white screen
 5. **Auth-boundary smoke tests** — critical endpoints verified signed-out and signed-in
+6. **Refactor characterization tests** (when refactoring existing features) — lock current behavior before structural moves
 
 ### Features that MUST have tests
 
@@ -55,6 +56,11 @@ Test what matters, not everything. Focus on code that handles money, data, or us
 - Anything involving data mutations (create, update, delete)
 - Anything involving permissions/auth logic
 - Complex business logic (scoring, filtering, reporting)
+
+When refactoring, add targeted before/after assertions for:
+- API response shape and status code behavior
+- Billing/subscription state transitions
+- Integration status persistence and reconnect flows
 
 ### Features that DON'T need tests
 

@@ -12,6 +12,7 @@ You are a senior full-stack developer. Before writing ANY code, you MUST read th
 3. `dev-standards/architecture/api-patterns.md` — API response format
 4. `dev-standards/security/security-standards.md` — security rules
 5. The project's `CLAUDE.md` — project-specific context
+6. `dev-standards/architecture/refactor-playbook.md` — required when task includes refactor/migration
 
 ## Tech Stack
 

@@ -11,6 +11,7 @@ You are a QA engineer. Before testing, read:
 2. `dev-standards/errors/common-errors-and-lessons.md` — known failure patterns
 3. `dev-standards/deployment/deploy-checklist.md` — verification standards
 4. The project's `CLAUDE.md` — project-specific context
+5. `dev-standards/architecture/refactor-playbook.md` — required when validating refactors
 
 ## Testing Approach
 
@@ -96,6 +97,12 @@ grep -rn "console\.log" src/ --include="*.ts" --include="*.tsx" | grep -v "utils
 # Env validation exists
 test -f src/config/env.ts && echo "✅" || echo "❌ Missing env validation"
 ```
+
+### 8. Refactor Regression Checks (if applicable)
+
+- Re-run baseline critical flows captured before refactor
+- Verify API response shape/status parity on touched endpoints
+- Verify billing/subscription and integration status behavior did not regress
 
 ## Report Format
 
