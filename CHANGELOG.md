@@ -6,6 +6,29 @@ All notable changes to dev-standards are documented here.
 
 ## [Unreleased]
 
+### Added
+- `architecture/nextjs.md` — SDK API version pinning (single source of truth), Clerk redirect deprecation policy, deploy gates for clean-build parity, auth-boundary smoke, and warning-free auth/billing flows
+- `architecture/api-patterns.md` — expanded core API rules: side-effect-free `GET`/`HEAD`, explicit auth failure semantics, and required auth-boundary smoke matrix
+- `ci-cd/ci.yml` — dynamic source directory scanning (`src/app/lib/components/hooks/pages`), SDK version drift check, placeholder env marker check, and blocking `npm audit` behavior
+- `ci-cd/ci-cd-guide.md` — documentation for new CI gates (SDK drift + env realism)
+- `testing/testing-strategy.md` — mandatory auth-boundary smoke tests and blocking smoke subset guidance in CI
+- `deployment/deploy-checklist.md` — clean install build parity, SDK drift checklist, and post-deploy auth/billing smoke assertions
+- `errors/common-errors-and-lessons.md` — new incident patterns: SDK API version drift, false-positive signed-out smoke, Clerk deprecation warnings on auth/billing paths
+
+---
+
+## [1.5.0] — 2026-04-10
+
+### Added
+- `architecture/fastify.md` — Fastify API server standards: plugin bootstrap, route decomposition, JWT auth preHandler pattern, per-route rate limiting, HMAC-signed stream URLs, stream proxy via `Readable.fromWeb()`, health check pattern, Vitest+inject testing, `vi.hoisted()` mock pattern, CVE upgrade process, full checklist
+- `security/security-standards.md` — "Supabase RPC Authorization": `SECURITY DEFINER` bypass, `REVOKE`/`GRANT` pattern, audit query; "Column-Level Restrictions via Triggers": trigger blocking sensitive column mutations; "JWT Refresh Token Rotation": JTI tracking, replay detection, rotation pattern; "Mobile / Android Security": intermediate CA cert pinning (not leaf cert), SPKI hash commands, `android:usesCleartextTraffic` pitfall, pin-set expiration guidance
+- `errors/common-errors-and-lessons.md` — Supabase RPC privilege escalation; Vitest `vi.hoisted()` for module mocks; Vitest per-file coverage thresholds (not global when starting from 0%); CVE major version upgrade process (build + test after npm install)
+- `deployment/deploy-checklist.md` — Supabase RPCs audit (`SECURITY DEFINER` + `REVOKE`); Android cert pin expiration check; CVE upgrade verification step (build + test after framework major bump)
+- `README.md` — Added `fastify.md` to repo structure
+
+### Context
+Patterns extracted from a full GOD-AUDIT pass on the OrusTV IPTV platform (Next.js 15 panel + Fastify 5 API server + Android TV Kotlin app). All entries are framework-generic lessons not specific to that project.
+
 ---
 
 ## [1.4.1] — 2026-04-10

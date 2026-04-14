@@ -1188,6 +1188,54 @@ npm run lint        # ESLint
 npm run build       # Production build
 ```
 
+### ❌ Error: SDK API version drift breaks TypeScript at deploy time
+**What happened:**
+- Build failed with typed SDK version mismatch (example: Stripe `LatestApiVersion`)
+- One file was updated, but many handlers still had old hardcoded `apiVersion` literals
+- Local runtime seemed fine until strict type check in production build
+
+**Root cause:**
+- API version literals were duplicated across many files
+- No single source of truth for SDK versions
+- No CI drift scan for hardcoded literals
+
+**✅ Prevention:**
+1. Define one shared version constant (example: `STRIPE_API_VERSION`) and import it everywhere
+2. Ban hardcoded `apiVersion: '....'` literals outside the shared constants file
+3. Add CI drift check that greps for hardcoded version literals
+4. Treat `LatestApiVersion` compile failures as release blockers
+
+### ❌ Error: False-positive API smoke from signed-out requests only
+**What happened:**
+- Smoke tests ran only with signed-out context
+- Protected APIs returned middleware rewrite `404` instead of reaching route logic
+- Team marked flow "healthy" without validating real signed-in path
+
+**Root cause:**
+- No auth-boundary smoke matrix (signed-out + signed-in)
+- Curl-only smoke without authenticated session coverage
+- Middleware/auth behavior masked route-level issues
+
+**✅ Prevention:**
+1. For critical flows, always test both signed-out and signed-in contexts
+2. Require explicit expected behavior per context (`401/403` vs success path)
+3. Do not certify integrations/billing flows from unsigned smoke evidence alone
+4. Capture and review middleware headers (`X-Clerk-Auth-*`, rewrite hints) during smoke
+
+### ❌ Error: Clerk deprecation warnings ignored in auth/billing paths
+**What happened:**
+- Browser console showed deprecated Clerk props (`afterSignInUrl` / `afterSignUpUrl`)
+- Warnings were ignored until checkout/auth behavior drifted
+
+**Root cause:**
+- Deprecated API usage remained in production code
+- No release gate for auth-path deprecation warnings
+
+**✅ Prevention:**
+1. Replace deprecated Clerk redirect props with `fallbackRedirectUrl` / `forceRedirectUrl`
+2. Add deprecation warning checks to release smoke on auth and billing pages
+3. Treat auth/billing deprecation warnings as HIGH severity until fixed
+
 ### ❌ Error: Environment variables not working in production
 **What happened:**
 - App works locally but crashes in production
@@ -1496,6 +1544,103 @@ safeContacts.forEach(...); // Safe to use array methods
 
 ---
 
+## Patterns from the IPTV Platform Audit (April 2026)
+
+### ❌ Error: Supabase `SECURITY DEFINER` RPCs callable by any authenticated user
+**What happened** (iptv-platform):
+- `transfer_credits` and `activate_subscription` RPCs used `SECURITY DEFINER` (runs as postgres, bypasses RLS)
+- No `REVOKE ALL FROM PUBLIC` and no `auth.uid()` guard
+- Any authenticated user could activate subscriptions or transfer credits
+
+**Root cause:**
+- Assuming RLS also protects stored functions — it does not
+- `SECURITY DEFINER` is a separate privilege layer from table RLS
+
+**✅ Prevention:**
+1. After every `CREATE FUNCTION ... SECURITY DEFINER`, immediately add:
+   ```sql
+   REVOKE ALL ON FUNCTION my_function FROM PUBLIC;
+   GRANT EXECUTE ON FUNCTION my_function TO service_role; -- or authenticated
+   ```
+2. Add `auth.uid()` guard inside the function if callers must be the record owner
+3. Audit existing functions: `SELECT routine_name FROM information_schema.routines WHERE routine_schema = 'public' AND security_type = 'DEFINER'`
+4. See `security/security-standards.md` — "Supabase RPC Authorization" for full pattern
+
+---
+
+### ❌ Error: Vitest `vi.mock()` factory references uninitialized variable
+**What happened** (iptv-platform):
+- Declared `const mockFrom = vi.fn()` then used it in `vi.mock('...', () => ({ supabase: { from: mockFrom } }))`
+- Error at test run: `ReferenceError: Cannot access 'mockFrom' before initialization`
+
+**Root cause:**
+- Vitest hoists `vi.mock()` calls to the top of the file (before any variable declarations) to ensure mocks are registered before imports
+- Variables declared with `const`/`let` are NOT hoisted — they're in the temporal dead zone when the factory runs
+
+**✅ Prevention:**
+```typescript
+// ✅ CORRECT — use vi.hoisted() to declare variables before hoisting
+const { mockFrom } = vi.hoisted(() => ({ mockFrom: vi.fn() }))
+vi.mock('../lib/supabase', () => ({
+  supabase: { from: mockFrom, rpc: vi.fn() },
+}))
+
+// ❌ WRONG — mockFrom is not yet initialized when vi.mock factory runs
+const mockFrom = vi.fn()
+vi.mock('../lib/supabase', () => ({
+  supabase: { from: mockFrom }, // ReferenceError!
+}))
+```
+
+---
+
+### ❌ Error: Vitest global coverage threshold fails when starting from 0%
+**What happened** (iptv-platform):
+- Set global `thresholds: { lines: 70, functions: 70 }` before writing most tests
+- `npm run test:coverage` immediately fails with "coverage does not meet global threshold"
+- Blocks the CI pipeline even though newly-written tests have high coverage
+
+**Root cause:**
+- Global thresholds apply to ALL included files, including files with 0% coverage
+- Starting a test suite from scratch makes global thresholds unreachable until most files are tested
+
+**✅ Prevention:**
+```typescript
+// vitest.config.ts — use per-file thresholds on tested modules only
+thresholds: {
+  'src/lib/cache.ts': { lines: 95, functions: 95 },
+  'src/lib/validator.ts': { lines: 80, functions: 95 },
+  'src/routes/auth.ts': { lines: 50, functions: 55 },
+  // Add global threshold only when most files have tests:
+  // lines: 70, functions: 70
+},
+```
+Increase thresholds incrementally as test coverage grows. Never set a global threshold you can't currently meet.
+
+---
+
+### ❌ Error: npm audit CVE requires breaking-change major version bump
+**What happened** (iptv-platform):
+- `fast-jwt` had critical CVE — fix required `@fastify/jwt@10` which requires `fastify@5`
+- Blindly running `npm audit fix --force` would break the API server without TypeScript verification
+
+**Root cause:**
+- CVE fixes sometimes require framework major version bumps (e.g., fastify v4→v5)
+- `npm audit fix --force` applies fixes without checking if the app still compiles or tests pass
+
+**✅ Prevention:**
+1. Run audit fix on ALL ecosystem plugins together, not just the vulnerable one:
+   ```bash
+   npm install fastify@latest @fastify/jwt@latest @fastify/cors@latest \
+     @fastify/helmet@latest @fastify/rate-limit@latest --save
+   ```
+2. Immediately run `npm run build` — catches API changes in the TypeScript compilation
+3. Immediately run `npm test` — verifies behavior is unchanged
+4. Check the framework's migration guide for breaking changes before assuming the build means success
+5. See `architecture/fastify.md` — "Dependency CVE Upgrades with Breaking Changes"
+
+---
+
 ## Notes
 
 - This is a living document - update it as new patterns emerge
@@ -1503,4 +1648,4 @@ safeContacts.forEach(...); // Safe to use array methods
 - Include specific code examples for clarity
 - Keep prevention steps actionable and specific
 - Review [github-error-patterns.md](./github-error-patterns.md) and [all-repos-analysis.md](./all-repos-analysis.md) for raw commit data
-- **Last updated:** April 10, 2026 — Next.js webhook vs `parseBody` checklist; chart/SVG theming; `exceljs` vs `xlsx`; Vitest `vi.stubEnv`; documentation drift; (plus February 16, 2026 aso-platform integration errors)
+- **Last updated:** April 10, 2026 — Supabase RPC privilege escalation; Vitest `vi.hoisted()` for mocks; Vitest per-file coverage thresholds; CVE major version upgrade process; (plus earlier: Next.js webhook vs `parseBody` checklist; chart/SVG theming; `exceljs` vs `xlsx`; Vitest `vi.stubEnv`; documentation drift)

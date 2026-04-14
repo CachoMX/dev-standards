@@ -30,11 +30,13 @@ When starting any new project:
 6. Copy `ci-cd/ci.yml` to `.github/workflows/ci.yml`
 7. Set up branch protection following `ci-cd/ci-cd-guide.md`
 8. Share `git/git-workflow.md` with the team
+9. For Next.js apps, enforce auth-boundary smoke (signed-out + signed-in) before certifying production readiness
 
 When deploying:
 
 1. Run through `deployment/deploy-checklist.md`
 2. Run through `security/security-standards.md` security review checklist
+3. Confirm CI passed SDK version drift and placeholder env realism checks
 
 ## Repo Structure
 
@@ -45,6 +47,7 @@ dev-standards/
 │   ├── stack-defaults.md                  # Default tech stack for all apps
 │   ├── api-patterns.md                    # API response format, pagination, error codes
 │   ├── nextjs.md                          # Next.js App Router standards (force-dynamic, parseBody, Sentry, etc.)
+│   ├── fastify.md                         # Fastify API server standards (plugins, JWT, streaming, CVE upgrades)
 │   ├── performance.md                     # Core Web Vitals, bundles, React/query performance
 │   ├── accessibility.md                   # WCAG 2.1 AA checklist and patterns
 │   ├── bulletproof-react-prompt.md        # Claude Code prompt for new projects
@@ -168,4 +171,4 @@ Share this repo with Ricardo, Marco, Ruth, and the rest of the team:
 
 ## Last Updated
 
-April 2026
+April 2026 — Added `architecture/fastify.md`; security: Supabase RPC authorization, column-level triggers, JWT rotation, Android cert pinning; errors: Vitest `vi.hoisted()`, per-file coverage thresholds, CVE major-version upgrade process
