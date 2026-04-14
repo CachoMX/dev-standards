@@ -51,6 +51,8 @@ This means NO ONE (including you) can push directly to main. Everything goes thr
 3. ESLint — catches code quality issues
 4. Forbidden patterns check — catches `any`, `@ts-ignore`, hardcoded colors, console.log
 5. Production build — catches build-time errors
+6. SDK version drift check — blocks stale hardcoded API versions (for example Stripe `apiVersion`)
+7. Environment realism check — blocks placeholder env markers during production-readiness validation
 
 ### Tests (runs after quality passes)
 1. Unit tests with Vitest
@@ -59,6 +61,7 @@ This means NO ONE (including you) can push directly to main. Everything goes thr
 ### Security Audit (runs in parallel)
 1. npm audit — checks for vulnerable dependencies
 2. Secret scanning — checks for hardcoded API keys/passwords
+3. Audit failures are blocking by default (no hidden `continue-on-error` for high+ vulnerabilities)
 
 ## When CI Fails
 
@@ -76,6 +79,8 @@ Common failures and fixes:
 | ESLint error | Fix the lint issue — don't disable the rule |
 | Forbidden pattern found | Replace `any` with proper type, use CSS variables, etc. |
 | Build failure | Check for missing imports, wrong paths |
+| SDK version drift failure | Centralize version constants (for example `STRIPE_API_VERSION`) and remove hardcoded literals |
+| Placeholder env marker failure | Replace `your-project`/`CHANGE_ME` values before certifying release readiness |
 | Test failure | Fix the test or the code it's testing |
 | Security audit | Run `npm audit fix` or update the vulnerable package |
 

@@ -40,25 +40,35 @@ jobs:
 
       - name: Check for forbidden patterns
         run: |
+          TARGET_DIRS=""
+          for d in src app lib components hooks pages; do
+            if [ -d "$d" ]; then
+              TARGET_DIRS="$TARGET_DIRS $d"
+            fi
+          done
+          if [ -z "$TARGET_DIRS" ]; then
+            TARGET_DIRS="."
+          fi
+
           echo "🔍 Checking for 'any' types..."
-          if grep -rn ": any\b" src/ --include="*.ts" --include="*.tsx" | grep -v "node_modules" | grep -v ".d.ts"; then
+          if grep -rn ": any\b" $TARGET_DIRS --include="*.ts" --include="*.tsx" | grep -v "node_modules" | grep -v ".d.ts"; then
             echo "❌ Found 'any' types. Fix them before merging."
             exit 1
           fi
 
           echo "🔍 Checking for @ts-ignore..."
-          if grep -rn "@ts-ignore\|@ts-expect-error" src/ --include="*.ts" --include="*.tsx"; then
+          if grep -rn "@ts-ignore\|@ts-expect-error" $TARGET_DIRS --include="*.ts" --include="*.tsx"; then
             echo "❌ Found @ts-ignore/@ts-expect-error. Fix the actual type error."
             exit 1
           fi
 
           echo "🔍 Checking for console.log in production code..."
-          if grep -rn "console\.log" src/ --include="*.ts" --include="*.tsx" | grep -v "// debug" | grep -v "utils/logger"; then
+          if grep -rn "console\.log" $TARGET_DIRS --include="*.ts" --include="*.tsx" | grep -v "// debug" | grep -v "utils/logger"; then
             echo "⚠️  Found console.log statements. Use a logger utility instead."
           fi
 
           echo "🔍 Checking for hardcoded colors..."
-          if grep -rn "bg-gray-\|bg-blue-\|bg-red-\|bg-green-\|text-gray-\|text-blue-\|text-red-\|text-green-" src/ --include="*.tsx" | grep -v "// theme-ok"; then
+          if grep -rn "bg-gray-\|bg-blue-\|bg-red-\|bg-green-\|text-gray-\|text-blue-\|text-red-\|text-green-" $TARGET_DIRS --include="*.tsx" | grep -v "// theme-ok"; then
             echo "⚠️  Found hardcoded Tailwind colors. Use CSS variables instead."
           fi
 
@@ -66,6 +76,34 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Check SDK API version drift (Stripe)
+        run: |
+          if [ -f "lib/stripe/webhook-helpers.ts" ]; then
+            PINNED="$(grep -Eo "STRIPE_API_VERSION[^=]*=[[:space:]]*'[^']+'" lib/stripe/webhook-helpers.ts | head -n 1 | sed -E "s/.*'([^']+)'.*/\1/")"
+            if [ -z "$PINNED" ]; then
+              echo "❌ Could not extract STRIPE_API_VERSION from lib/stripe/webhook-helpers.ts"
+              exit 1
+            fi
+            echo "Pinned Stripe API version: $PINNED"
+            if grep -Rns "apiVersion:[[:space:]]*'20" app lib src 2>/dev/null | grep -v "webhook-helpers.ts"; then
+              echo "❌ Found hardcoded API version literal(s). Use shared STRIPE_API_VERSION constant."
+              exit 1
+            fi
+          else
+            echo "ℹ️ Stripe version pin file not present; skipping drift check."
+          fi
+
+      - name: Check placeholder env markers
+        run: |
+          if [ -f ".env.local" ]; then
+            if grep -nE "your-project|_your$|example\.com|CHANGE_ME|REPLACE_ME" .env.local; then
+              echo "❌ Placeholder values found in .env.local. Do not certify production readiness with placeholder envs."
+              exit 1
+            fi
+          else
+            echo "ℹ️ .env.local not committed; skipping placeholder scan."
+          fi
 
   test:
     name: Tests
@@ -116,13 +154,22 @@ jobs:
 
       - name: Audit dependencies
         run: npm audit --audit-level=high
-        continue-on-error: true
+        continue-on-error: false
 
       - name: Check for secrets in code
         run: |
           echo "🔍 Checking for potential secrets..."
           PATTERNS="password\s*=\s*['\"]|api_key\s*=\s*['\"]|secret\s*=\s*['\"]|token\s*=\s*['\"]|SUPABASE_SERVICE_ROLE_KEY\s*=\s*['\"]"
-          if grep -rniE "$PATTERNS" src/ --include="*.ts" --include="*.tsx" --include="*.js" | grep -v ".env" | grep -v "process.env" | grep -v "import.meta.env"; then
+          TARGET_DIRS=""
+          for d in src app lib components hooks pages; do
+            if [ -d "$d" ]; then
+              TARGET_DIRS="$TARGET_DIRS $d"
+            fi
+          done
+          if [ -z "$TARGET_DIRS" ]; then
+            TARGET_DIRS="."
+          fi
+          if grep -rniE "$PATTERNS" $TARGET_DIRS --include="*.ts" --include="*.tsx" --include="*.js" | grep -v ".env" | grep -v "process.env" | grep -v "import.meta.env"; then
             echo "❌ Potential hardcoded secrets found!"
             exit 1
           fi

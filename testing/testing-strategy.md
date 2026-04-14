@@ -35,7 +35,7 @@ Test what matters, not everything. Focus on code that handles money, data, or us
 **E2E Tests (Playwright)**
 - Only critical paths: login, create lead, complete deal, generate report
 - Maximum 10-15 E2E tests per project
-- Run in CI but not blocking (can be slow)
+- Keep full E2E suite non-blocking if needed, but maintain a small blocking smoke subset for release-critical flows
 
 ---
 
@@ -47,6 +47,7 @@ Test what matters, not everything. Focus on code that handles money, data, or us
 2. **Schema validation tests** — for every Zod schema used in forms or API
 3. **Utility function tests** — for every function in `utils/`
 4. **Error boundary test** — verify errors are caught, not white screen
+5. **Auth-boundary smoke tests** — critical endpoints verified signed-out and signed-in
 
 ### Features that MUST have tests
 
@@ -631,9 +632,11 @@ export async function cleanupTestData(page: Page, email: string) {
 2. **Clean up test data** — don't leave test records in database
 3. **Use fixtures** for common setup (login, seed data)
 4. **Test critical paths only** — max 10-15 E2E tests per project
-5. **Run E2E in CI** but don't block on failures (they can be flaky)
-6. **Use screenshots/videos** for debugging failures
-7. **Mock external APIs** when possible to avoid rate limits
+5. **Include auth-boundary assertions** — verify signed-out failures (`401/403`) and signed-in success paths
+6. **Run a blocking smoke subset in CI** for login + billing/integration core path
+7. **Keep the full E2E suite non-blocking** if execution time/flakiness is high
+8. **Use screenshots/videos** for debugging failures
+9. **Mock external APIs** when possible to avoid rate limits
 
 ---
 

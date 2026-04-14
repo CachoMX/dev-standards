@@ -20,6 +20,8 @@ npm run test -- --run # All tests pass
 - [ ] ESLint: zero errors, zero warnings
 - [ ] Build: succeeds without warnings
 - [ ] Tests: all passing
+- [ ] Build command is the same as production platform command (no lighter local variant)
+- [ ] Clean install parity verified (`npm ci` + `npm run build`) in CI or local pre-release run
 
 ---
 
@@ -50,13 +52,24 @@ grep -rn "TODO\|FIXME\|HACK\|XXX" src/ --include="*.ts" --include="*.tsx"
 - [ ] No hardcoded API keys, tokens, or URLs in source code
 - [ ] `.env` files are in `.gitignore`
 - [ ] Production env vars point to production services (not staging/dev)
+- [ ] No placeholder env values (`your-project`, `CHANGE_ME`, `REPLACE_ME`) in release readiness environments
+
+---
+
+## 3.1 SDK Version Drift
+
+- [ ] Shared SDK version constants are centralized (for example `STRIPE_API_VERSION`)
+- [ ] No stale hardcoded SDK API version literals in route handlers
+- [ ] Typed SDK version checks compile cleanly (`LatestApiVersion` mismatch = fail release)
 
 ---
 
 ## 4. Security
 
 - [ ] `npm audit` — no high/critical vulnerabilities (or documented exception while upgrading framework)
+- [ ] When upgrading framework (e.g., fastify v4→v5, Next.js major): run `npm run build` + `npm test` immediately after — CVE fix upgrades can introduce breaking API changes
 - [ ] RLS enabled on all Supabase tables — **including any new tables added this release**, with policies shipped in the **same** release as `CREATE TABLE`
+- [ ] **Supabase RPCs audit:** any new `SECURITY DEFINER` function has `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO service_role` (or appropriate role) — RPCs bypass RLS
 - [ ] Webhook signing secrets (per provider) and `CRON_SECRET` present in production env
 - [ ] No `SUPABASE_SERVICE_ROLE_KEY` in client code
 - [ ] Service-role code paths audited: every admin query scoped by tenant/org where applicable (`grep` audit)
@@ -65,6 +78,7 @@ grep -rn "TODO\|FIXME\|HACK\|XXX" src/ --include="*.ts" --include="*.tsx"
 - [ ] No `dangerouslySetInnerHTML` without DOMPurify
 - [ ] No `.select('*')` in API routes — all Supabase queries use explicit column lists
 - [ ] Idempotency guards on state-changing operations (subscriptions, payments, activations)
+- [ ] **Android apps:** `network_security_config.xml` pins intermediate CA (not leaf cert); `pin-set expiration` date is in the future; `android:usesCleartextTraffic="true"` removed from Manifest
 
 ---
 
@@ -133,6 +147,9 @@ After deploying:
 5. [ ] Check network tab — no failed requests
 6. [ ] Test on mobile (quick check)
 7. [ ] Verify external integrations still work (Supabase, APIs)
+8. [ ] Run auth-boundary smoke for critical APIs (signed-out returns explicit `401/403`, signed-in reaches handler logic)
+9. [ ] For billing flows, verify paid users do not see trial-expired state and subscription updates are reflected
+10. [ ] Check for deprecation warnings on auth/billing pages (for example Clerk redirect prop warnings)
 
 ---
 
