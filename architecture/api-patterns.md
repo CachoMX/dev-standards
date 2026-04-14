@@ -176,15 +176,27 @@ export async function POST(req: Request) {
 }
 ```
 
-### The Three Rules
+### Core Rules
 
 | Rule | Why |
 |------|-----|
 | `export const dynamic = 'force-dynamic'` | Routes using auth/headers crash at build time without it |
 | `parseBody(req, schema)` before any DB write | Malformed input returns 400 before touching the database |
 | Explicit `.select('id, col1, col2')` never `'*'` | `SELECT *` leaks columns added later; breaks typed responses |
+| `GET` / `HEAD` endpoints are side-effect free | Public replays and crawlers must not mutate billing/data state |
+| Protected endpoint failures are explicit (`401`/`403`) | Avoid masked `404` rewrite behavior that hides real auth bugs |
 
 **Webhook routes are excluded from `parseBody` for the initial read** — use `await req.text()`, verify the signature, then `JSON.parse` and Zod (see "Read raw body once" below).
+
+### Auth-boundary smoke matrix (required before release)
+
+For critical routes (auth, billing, subscription, integrations), verify both contexts:
+
+- Signed-out request: returns explicit auth failure (`401` or `403`) and expected payload.
+- Signed-in request: reaches handler logic (not middleware rewrite to generic `404`).
+- Mutation endpoints: validate origin/CSRF checks from browser-like headers.
+
+Do not mark API smoke as passed from signed-out-only evidence.
 
 ### `parseBody` Helper
 

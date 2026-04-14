@@ -561,6 +561,38 @@ const customerId =
 
 Apply the same pattern to any SDK field typed as `string | SomeObject | null`.
 
+### SDK API version pinning (single source of truth)
+
+If an SDK exposes a typed API version (for example Stripe `LatestApiVersion`), pin it in one shared constant file and reference that constant everywhere.
+
+```typescript
+// lib/stripe/webhook-helpers.ts
+import Stripe from 'stripe';
+export const STRIPE_API_VERSION: Stripe.LatestApiVersion = '2026-02-25.clover';
+```
+
+```typescript
+// Any route/client file
+import { STRIPE_API_VERSION } from '@/lib/stripe/webhook-helpers';
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: STRIPE_API_VERSION });
+```
+
+Rules:
+
+- Do not hardcode API version literals in multiple files.
+- Grep for stale literals before release (`apiVersion: '....clover'`).
+- Treat `LatestApiVersion` compile errors as release blockers (they indicate SDK/version drift).
+
+### Clerk redirect prop compatibility
+
+Clerk deprecated `afterSignInUrl` / `afterSignUpUrl` in favor of `fallbackRedirectUrl` and `forceRedirectUrl`.
+
+Rules:
+
+- Do not use deprecated redirect props in new code.
+- Replace existing deprecated props during auth flow work.
+- Any deprecation warning in auth/checkout paths is a release blocker until resolved.
+
 ---
 
 ## 12. App Router Checklist
@@ -585,9 +617,14 @@ Apply the same pattern to any SDK field typed as `string | SomeObject | null`.
 ### Before every deploy
 
 - [ ] `bun run build` passes locally — catches prerender errors and type errors before CI does
+- [ ] Build command matches production exactly (for example `next build && next-sitemap`, not a lighter local variant)
+- [ ] Clean install build parity verified (`rm -rf node_modules && npm ci && npm run build` in CI or locally)
 - [ ] New tables have RLS enabled + policies in the same release (not "table now, policies later")
 - [ ] New API routes have `force-dynamic`; body validation via `parseBody` **or** webhook raw-body flow
 - [ ] Webhook signing secrets and `CRON_SECRET` set in production env
 - [ ] No new `NEXT_PUBLIC_` prefixes on sensitive values
 - [ ] Sentry DSN set in production env vars (Vercel dashboard)
 - [ ] `bun run lint` passes — no ESLint errors
+- [ ] SDK version drift scan passes (no stale hardcoded API versions)
+- [ ] Auth-boundary smoke completed for critical flows: signed-out behavior and signed-in behavior both verified
+- [ ] No auth/billing deprecation warnings in browser/server logs (Clerk, Stripe SDK, framework warnings)
